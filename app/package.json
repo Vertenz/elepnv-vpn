@@ -64,6 +64,7 @@
     "vite": "^8.0.12"
   },
   "dependencies": {
+    "@radix-ui/themes": "^3.3.0",
     "electron-squirrel-startup": "^1.0.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"

@@ -4,7 +4,7 @@ function removeDeprecatedInlineDynamicImports(): Plugin {
   return {
     name: 'remove-deprecated-inline-dynamic-imports',
     configResolved(config) {
-      const output = config.build.rollupOptions.output
+      const output = config.build.rolldownOptions.output
 
       if (output && !Array.isArray(output) && 'inlineDynamicImports' in output) {
         delete (output as { inlineDynamicImports?: boolean }).inlineDynamicImports
@@ -17,7 +17,7 @@ function removeDeprecatedInlineDynamicImports(): Plugin {
 export default defineConfig({
   plugins: [removeDeprecatedInlineDynamicImports()],
   build: {
-    rollupOptions: {
+    rolldownOptions: {
       output: {
         codeSplitting: false,
         entryFileNames: 'preload.js',
