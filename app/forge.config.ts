@@ -12,7 +12,21 @@ const config: ForgeConfig = {
     asar: true,
   },
   rebuildConfig: {},
-  makers: [new MakerSquirrel({}), new MakerZIP({}, ['darwin']), new MakerRpm({}), new MakerDeb({})],
+  makers: [
+    new MakerSquirrel({}),
+    new MakerZIP({}, ['darwin']),
+    new MakerRpm({}),
+    new MakerDeb({
+      options: {
+        maintainer: 'Vladimir Vertenz <vladmirworld@gmail.com>',
+        homepage: 'https://example.invalid/elepn',
+        categories: ['Network'],
+        scripts: {
+          postinst: '../packaging/deb/postinst.sh',
+        },
+      },
+    }),
+  ],
   plugins: [
     new VitePlugin({
       // `build` can specify multiple entry builds, which can be Main process, Preload scripts, Worker process, etc.
