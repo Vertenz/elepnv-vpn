@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=elepn
+Comment=Electron proxy client
+Exec=/usr/bin/elepn %u
+Icon=elepn
+Terminal=false
+Categories=Network;

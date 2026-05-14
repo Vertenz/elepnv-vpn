@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "jsx": "react-jsx",
+    "allowJs": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "sourceMap": true,
+    "baseUrl": ".",
+    "outDir": "dist",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true
+  },
+  "include": [
+    "forge.config.ts",
+    "forge.env.d.ts",
+    "src",
+    "vite.main.config.ts",
+    "vite.preload.config.ts",
+    "vite.renderer.config.mts"
+  ]
+}

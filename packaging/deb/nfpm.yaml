@@ -1,0 +1,12 @@
+name: "elepn"
+arch: "amd64"
+platform: "linux"
+version: "${VERSION}"
+section: "net"
+priority: "optional"
+maintainer: "Vladimir Vertenz <vladmirworld@gmail.com>"
+description: |
+  Electron client with a reserved privileged daemon layout.
+homepage: "https://example.invalid/elepn"
+license: "MIT"
+contents: []

@@ -1,0 +1,31 @@
+# Private
+docs/
+*/docs/
+
+# Build outputs
+/dist/
+app/out/
+app/dist/
+daemon/bin/
+
+# Dependencies
+node_modules/
+
+# IDE
+.idea/
+.vscode/settings.json
+*.swp
+
+# OS
+.DS_Store
+
+# Local state during dev
+/run/
+*.log
+
+# Sensitive
+*.key
+*.pem
+.env
+*.env
+*/.env
