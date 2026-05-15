@@ -11,7 +11,6 @@ export interface ParsedPreview {
   extras: { k: string; v: string }[]
 }
 
-const PROTOS: ConfigProto[] = ['vless', 'vmess', 'ss', 'trojan']
 const PROTO_RE = /^(vless|vmess|ss|trojan):\/\/(.*)$/i
 const COUNTRY_RE = /^([A-Z]{2})[-_ ]/
 
@@ -117,6 +116,3 @@ function safeDecode(s: string): string {
   }
 }
 
-export function isSupportedProto(s: string): s is ConfigProto {
-  return PROTOS.includes(s as ConfigProto)
-}

@@ -75,10 +75,15 @@ export class PrefsStore {
       writeFileAtomic.sync(this.filePath, JSON.stringify(this.current, null, 2), 'utf-8')
       this.dirty = false
     } catch (err) {
-      console.warn('[PrefsStore] flushSync failed:', err)
+      // Process is quitting; we can't surface to the renderer anymore.
+      // console.error gets the highest visible severity in main-process logs.
+      console.error('[PrefsStore] flushSync failed at quit — config changes since last flush LOST:', err)
     }
   }
 
+  // Coalesces rapid `update()` calls — at most one pending flush at a time.
+  // The snapshot is read at fire time (not schedule time), so the write
+  // always sees the latest state.
   private scheduleFlush(): void {
     if (this.flushTimer) return
     this.flushTimer = setTimeout(() => {

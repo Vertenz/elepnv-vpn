@@ -37,9 +37,21 @@ function bootstrap(): void {
         : 'light'
       : persisted.themePreference
 
+  // Restore the most-recently-used config across restarts by picking
+  // argmax(lastUsedAt). Falls back to the first config if none has been
+  // used yet, or null if the list is empty.
+  const lastUsed = persisted.configs.reduce<(typeof persisted.configs)[number] | null>(
+    (best, c) => {
+      const cUsed = c.lastUsedAt ?? 0
+      const bestUsed = best?.lastUsedAt ?? 0
+      return cUsed > bestUsed ? c : best
+    },
+    null,
+  )
+
   const initial: AppState = {
     configs: persisted.configs,
-    activeId: persisted.configs[0]?.id ?? null,
+    activeId: lastUsed?.id ?? persisted.configs[0]?.id ?? null,
     conn: { kind: 'disconnected' },
     theme,
     themePreference: persisted.themePreference,

@@ -8,6 +8,14 @@ const DAY = 86_400_000
  * Five sample configs used to populate prefs.json on first launch in
  * non-packaged builds. The bootstrap in main/index.ts only calls this
  * when both `!app.isPackaged` and `process.env.ELEPN_SEED !== '0'`.
+ *
+ * Each call generates fresh UUIDs — call at most once per launch.
+ *
+ * The sample URLs (`'vmess://example'` etc.) are placeholders for the
+ * mock UI and will fail `validateConfig` if the user edits a seed config
+ * through the AddSheet edit-mode (URL-shape revalidation). For the dev
+ * acceptance flow this is acceptable; replace with real test URLs before
+ * shipping any sample data in a packaged build.
  */
 export function buildSampleConfigs(now: number = Date.now()): Config[] {
   return [
