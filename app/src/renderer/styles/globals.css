@@ -1,8 +1,70 @@
+:root {
+  --bg: #faf8f3;
+  --surface: #ffffff;
+  --surface-2: #f3f0e8;
+  --ink: #16161a;
+  --ink-2: #3a3a3e;
+  --muted: #7d7d7a;
+  --line: rgba(20, 20, 20, 0.08);
+  --line-strong: rgba(20, 20, 20, 0.16);
+  --accent: #2eab6b;
+  --accent-deep: #208a55;
+  --accent-soft: rgba(46, 171, 107, 0.1);
+  --warn: #d99a2c;
+  --warn-soft: rgba(217, 154, 44, 0.1);
+  --err: #c8533a;
+  --err-soft: rgba(200, 83, 58, 0.1);
+  --chrome-bg: #efece4;
+  --chrome-fg: #5a5a55;
+  --shadow-card: 0 1px 0 rgba(20, 20, 20, 0.03), 0 1px 2px rgba(20, 20, 20, 0.04);
+  --shadow-pop: 0 16px 50px -20px rgba(0, 0, 0, 0.32), 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.theme-dark {
+  --bg: #0f1014;
+  --surface: #191a20;
+  --surface-2: #22232a;
+  --ink: #ececef;
+  --ink-2: #b4b4ba;
+  --muted: #6f6f76;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.14);
+  --accent: #3bbd7a;
+  --accent-deep: #2eab6b;
+  --accent-soft: rgba(59, 189, 122, 0.16);
+  --warn: #e3a948;
+  --warn-soft: rgba(227, 169, 72, 0.16);
+  --err: #dd6849;
+  --err-soft: rgba(221, 104, 73, 0.16);
+  --chrome-bg: #1a1b21;
+  --chrome-fg: #9a9aa0;
+  --shadow-card: 0 1px 0 rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --shadow-pop: 0 16px 50px -20px rgba(0, 0, 0, 0.7), 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
 body {
-  margin: auto;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  color: var(--gray-12);
-  background: var(--gray-1);
+  font-family:
+    'Geist',
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-feature-settings: 'ss01', 'cv11';
+  color: var(--ink);
+  background: var(--bg);
 }
 
 button,
@@ -10,18 +72,94 @@ input,
 textarea,
 select {
   font: inherit;
+  color: inherit;
 }
 
-#root {
-  min-height: 100vh;
+.mono {
+  font-family: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 }
 
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.cap {
+  font-family: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+
+  80%,
+  100% {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+}
+
+@keyframes err-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(200, 83, 58, 0);
+  }
+
+  50% {
+    box-shadow: 0 0 0 8px rgba(200, 83, 58, 0.5);
+  }
+}
+
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes panel-in {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* Radix overlays — base resets so Dialog/Menu primitives inherit our tokens */
 .radix-themes {
-  min-height: 100vh;
+  background: transparent;
 }
 
-.app-shell {
-  width: min(38rem, calc(100vw - 4rem));
-  padding-block: 4rem;
-  margin-inline: auto;
+[role='menuitem'][data-highlighted] {
+  background: var(--surface-2);
+}
+
+[role='menuitem'][data-highlighted][data-danger='true'],
+[role='menuitem'][data-highlighted].danger {
+  background: var(--err-soft);
 }

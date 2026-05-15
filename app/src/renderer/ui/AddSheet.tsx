@@ -2,7 +2,7 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { useMemo, useState } from 'react'
 
 import { parseConfigUrl } from '@shared/parse-url'
-import type { Config } from '@shared/types'
+import  { type Config } from '@shared/types'
 
 import { BottomSheet } from './BottomSheet'
 import { IconAlert, IconCheck, IconPlus, IconX } from './icons'
@@ -141,7 +141,7 @@ function AddSheetForm({
             onClick={() => {
               if (!parsed.ok) return
               const built = parsed.build()
-              if (isEdit && editing) {
+              if (editing) {
                 // Preserve original id, addedAt, name, ping, lastUsedAt.
                 // Only URL-derived fields change.
                 onSave({

@@ -3,7 +3,7 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { type ReactNode } from 'react'
 
-import type { Config, ConfigId } from '@shared/types'
+import  { type Config, type ConfigId } from '@shared/types'
 
 import { Flag, IconCopy, IconEdit, IconLink, IconMore, IconPower, IconTrash, IconX } from './icons'
 

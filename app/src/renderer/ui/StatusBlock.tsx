@@ -1,4 +1,4 @@
-import type { Config, ConnState } from '@shared/types'
+import  { type Config, type ConnState } from '@shared/types'
 
 interface Props {
   conn: ConnState

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 
-import type { Config } from '@shared/types'
+import  { type Config } from '@shared/types'
 
 const DAY = 86_400_000
 

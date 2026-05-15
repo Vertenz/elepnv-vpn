@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 
 import { COMMAND, STATE_CHANGED, STATE_SUBSCRIBE } from '@shared/ipc-channels'
-import type { AppState, Command } from '@shared/types'
+import  { type AppState, type Command } from '@shared/types'
 
 export interface ElepnApi {
   /**

@@ -1,4 +1,4 @@
-import type { Config } from '@shared/types'
+import  { type Config } from '@shared/types'
 
 import { Flag, IconChevron } from './icons'
 

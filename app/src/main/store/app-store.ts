@@ -1,21 +1,21 @@
-import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
+import { EventEmitter } from 'node:events'
 
 import { nativeTheme } from 'electron'
 
-import type {
-  AppState,
-  Command,
-  Config,
-  ConfigId,
-  ConfigPatch,
-  EditableConfigFields,
-  Theme,
-  ThemePreference,
+import  {
+  type AppState,
+  type Command,
+  type Config,
+  type ConfigId,
+  type ConfigPatch,
+  type EditableConfigFields,
+  type Theme,
+  type ThemePreference,
 } from '@shared/types'
 
-import type { ConnectionEngine } from '../engine/connection-engine'
-import type { PrefsStore } from '../persistence/prefs-store'
+import  { type ConnectionEngine } from '../engine/connection-engine'
+import  { type PrefsStore } from '../persistence/prefs-store'
 
 const EDITABLE_FIELDS: ReadonlySet<EditableConfigFields> = new Set<EditableConfigFields>([
   'url', 'host', 'proto', 'variant', 'country', 'name', 'ping', 'lastUsedAt',
@@ -56,19 +56,19 @@ export class AppStore extends EventEmitter {
   dispatch(cmd: Command): void {
     switch (cmd.type) {
       case 'selectConfig':
-        return this.selectConfig(cmd.id)
+        { this.selectConfig(cmd.id); return; }
       case 'toggleConnection':
-        return this.toggleConnection()
+        { this.toggleConnection(); return; }
       case 'addConfig':
-        return this.addConfig(cmd.config, cmd.activate ?? false)
+        { this.addConfig(cmd.config, cmd.activate ?? false); return; }
       case 'updateConfig':
-        return this.updateConfig(cmd.id, cmd.patch)
+        { this.updateConfig(cmd.id, cmd.patch); return; }
       case 'deleteConfig':
-        return this.deleteConfig(cmd.id)
+        { this.deleteConfig(cmd.id); return; }
       case 'duplicateConfig':
-        return this.duplicateConfig(cmd.id)
+        { this.duplicateConfig(cmd.id); return; }
       case 'setThemePreference':
-        return this.setThemePreference(cmd.preference)
+        { this.setThemePreference(cmd.preference); return; }
       default: {
         const _exhaustive: never = cmd
         void _exhaustive
@@ -94,8 +94,8 @@ export class AppStore extends EventEmitter {
     const configs = this.state.configs.map(c => (c.id === id ? { ...c, lastUsedAt: now } : c))
     this.state = { ...this.state, configs, activeId: id }
     if (this.state.conn.kind === 'connecting' || this.state.conn.kind === 'connected') {
-      const refreshed = configs.find(c => c.id === id)!
-      this.engine.connect(refreshed)
+      const refreshed = configs.find(c => c.id === id)
+      if (refreshed) this.engine.connect(refreshed)
     }
     this.prefs.update({ configs })
     this.broadcast()
@@ -223,7 +223,7 @@ function validateConfig(c: unknown): asserts c is Config {
   if (typeof cfg.host !== 'string' || !HOST_RE.test(cfg.host)) {
     throw new Error('config.host invalid')
   }
-  if (typeof cfg.url !== 'string' || !cfg.url.startsWith(`${cfg.proto as string}://`)) {
+  if (typeof cfg.url !== 'string' || !cfg.url.startsWith(`${cfg.proto}://`)) {
     throw new Error('config.url invalid')
   }
   if (typeof cfg.addedAt !== 'number') throw new Error('config.addedAt invalid')

@@ -1,8 +1,8 @@
 import { EventEmitter } from 'node:events'
 
-import type { Config, ConnState } from '@shared/types'
+import  { type Config, type ConnState } from '@shared/types'
 
-import type { ConnectionEngine } from './connection-engine'
+import  { type ConnectionEngine } from './connection-engine'
 
 const TRANSITION_MS = 900
 

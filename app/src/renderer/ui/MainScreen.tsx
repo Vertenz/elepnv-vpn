@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import type { Config, ConnState } from '@shared/types'
+import  { type Config, type ConnState } from '@shared/types'
 
 import { useStore } from '../store/use-store'
 
@@ -45,7 +45,6 @@ export function MainScreen() {
     configs,
     activeId,
     conn,
-    theme,
     themePreference,
     toggleConnection,
     selectConfig,
@@ -90,7 +89,6 @@ export function MainScreen() {
         <BottomSheetContainerProvider container={bodyEl}>
           <div className="main" data-dim={overlayOpen}>
             <HiHeader
-              theme={theme}
               themePreference={themePreference}
               onToggleTheme={toggleTheme}
             />

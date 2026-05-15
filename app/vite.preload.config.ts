@@ -1,4 +1,5 @@
 import path from 'node:path'
+
 import { defineConfig, type Plugin } from 'vite'
 
 function removeDeprecatedInlineDynamicImports(): Plugin {

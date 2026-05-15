@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { useMemo, useState } from 'react'
 
-import type { Config, ConfigId } from '@shared/types'
+import  { type Config, type ConfigId } from '@shared/types'
 
 import { BottomSheet } from './BottomSheet'
 import { ConfigRow } from './ConfigRow'

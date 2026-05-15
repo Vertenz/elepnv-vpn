@@ -1,9 +1,8 @@
-import type { Theme, ThemePreference } from '@shared/types'
+import  { type ThemePreference } from '@shared/types'
 
 import { IconDisplay, IconMoon, IconSun } from './icons'
 
 interface HeaderProps {
-  theme: Theme
   themePreference: ThemePreference
   onToggleTheme: () => void
   version?: string
@@ -22,7 +21,6 @@ function ThemeIcon({ pref }: { pref: ThemePreference }) {
 }
 
 export function HiHeader({
-  theme: _theme,
   themePreference,
   onToggleTheme,
   version = 'xray-core 1.8.4',

@@ -4,12 +4,12 @@ import path from 'node:path'
 import { app } from 'electron'
 import writeFileAtomic from 'write-file-atomic'
 
-import type { Config, ThemePreference } from '@shared/types'
+import  { type Config, type ThemePreference } from '@shared/types'
 
 const FILE_VERSION = 1
 const FLUSH_DEBOUNCE_MS = 200
 
-type PersistedFields = {
+interface PersistedFields {
   themePreference: ThemePreference
   configs: Config[]
 }

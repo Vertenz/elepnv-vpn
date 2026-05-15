@@ -1,10 +1,10 @@
-import type { IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron'
+import  { type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import { ipcMain } from 'electron'
 
-import type { AppState, Command, Config, ConfigPatch, ThemePreference } from '@shared/types'
 import { COMMAND, STATE_CHANGED, STATE_SUBSCRIBE } from '@shared/ipc-channels'
+import  { type AppState, type Command, type Config } from '@shared/types'
 
-import type { AppStore } from '../store/app-store'
+import  { type AppStore } from '../store/app-store'
 
 interface RegisterOptions {
   /** URL prefix that the renderer's top frame must start with. In dev:
@@ -58,7 +58,7 @@ export function registerIpc(store: AppStore, opts: RegisterOptions): () => void 
     wc.send(STATE_CHANGED, store.snapshot())
   }
 
-  const commandHandler = async (event: IpcMainInvokeEvent, raw: unknown): Promise<void> => {
+  const commandHandler = (event: IpcMainInvokeEvent, raw: unknown): void => {
     if (!validateFrame(event)) {
       throw new Error('elepn:command rejected: untrusted frame')
     }
@@ -106,7 +106,7 @@ function parseCommand(raw: unknown): Command {
     case 'updateConfig': {
       if (typeof obj.id !== 'string' || !obj.id) throw new Error('updateConfig: id required')
       if (!obj.patch || typeof obj.patch !== 'object') throw new Error('updateConfig: patch required')
-      return { type: 'updateConfig', id: obj.id, patch: obj.patch as ConfigPatch }
+      return { type: 'updateConfig', id: obj.id, patch: obj.patch }
     }
 
     case 'setThemePreference': {
@@ -114,7 +114,7 @@ function parseCommand(raw: unknown): Command {
       if (p !== 'light' && p !== 'dark' && p !== 'system') {
         throw new Error('setThemePreference: invalid preference')
       }
-      return { type: 'setThemePreference', preference: p as ThemePreference }
+      return { type: 'setThemePreference', preference: p }
     }
 
     default:

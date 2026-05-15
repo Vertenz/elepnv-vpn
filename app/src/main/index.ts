@@ -4,7 +4,7 @@ import { app, BrowserWindow, Menu, nativeTheme, session } from 'electron'
 import { downloadChromeExtension } from 'electron-devtools-installer/dist/downloadChromeExtension'
 import started from 'electron-squirrel-startup'
 
-import type { AppState } from '@shared/types'
+import  { type AppState } from '@shared/types'
 
 import { MockEngine } from './engine/mock-engine'
 import { registerIpc } from './ipc/handlers'

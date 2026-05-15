@@ -1,4 +1,4 @@
-import type { Config, ConnState } from '@shared/types'
+import  { type Config, type ConnState } from '@shared/types'
 
 /**
  * The connection state-machine boundary.

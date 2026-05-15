@@ -1,4 +1,4 @@
-import type { Config, ConfigProto } from './types'
+import  { type Config, type ConfigProto } from './types'
 
 export type ParsedConfig =
   | { ok: true; preview: ParsedPreview; build: () => Config }
@@ -19,7 +19,7 @@ export function parseConfigUrl(raw: string): ParsedConfig {
   const trimmed = raw.trim()
   if (!trimmed) return { ok: false, reason: 'empty input' }
 
-  const match = trimmed.match(PROTO_RE)
+  const match = PROTO_RE.exec(trimmed)
   if (!match?.[1] || match[2] === undefined) {
     return {
       ok: false,
@@ -105,7 +105,7 @@ function describeVariant(proto: ConfigProto, params: URLSearchParams): string {
 }
 
 function guessCountry(fragment: string): string | null {
-  const m = fragment.match(COUNTRY_RE)
+  const m = COUNTRY_RE.exec(fragment)
   return m?.[1] ?? null
 }
 
