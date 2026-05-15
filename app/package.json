@@ -64,6 +64,8 @@
     "vite": "^8.0.12"
   },
   "dependencies": {
+    "@fontsource/geist-mono": "^5.2.7",
+    "@fontsource/geist-sans": "^5.2.5",
     "@radix-ui/themes": "^3.3.0",
     "electron-squirrel-startup": "^1.0.1",
     "react": "^19.2.6",
