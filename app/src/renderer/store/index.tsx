@@ -48,8 +48,3 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   return <StoreContext.Provider value={api}>{children}</StoreContext.Provider>
 }
-
-// Temporary compat re-export so App.tsx (which still imports `useStore` from
-// `./store`) keeps compiling. Removed in Task 15 after App.tsx is updated.
-// eslint-disable-next-line react-refresh/only-export-components
-export { useStore } from './use-store'

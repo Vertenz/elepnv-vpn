@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { useStore } from '../store'
-import type { ConnState } from '@shared/types'
+import { useStore } from '../store/use-store'
+import type { Config, ConnState } from '@shared/types'
 
 import { ActiveConfigCard } from './ActiveConfigCard'
 import { AddSheet } from './AddSheet'
@@ -56,9 +56,9 @@ export function MainScreen() {
   }, [])
 
   const activeConfig =
-    configs.find((c) => c.id === activeId) ??
+    configs.find((c: Config) => c.id === activeId) ??
     configs.find(
-      (c) =>
+      (c: Config) =>
         (conn.kind === 'connected' && conn.config === c.id) ||
         (conn.kind === 'connecting' && conn.target === c.id),
     ) ??
