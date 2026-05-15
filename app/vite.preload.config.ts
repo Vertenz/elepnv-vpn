@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
 
 function removeDeprecatedInlineDynamicImports(): Plugin {
@@ -16,6 +17,9 @@ function removeDeprecatedInlineDynamicImports(): Plugin {
 // https://vitejs.dev/config
 export default defineConfig({
   plugins: [removeDeprecatedInlineDynamicImports()],
+  resolve: {
+    alias: { '@shared': path.resolve(__dirname, 'src/shared') },
+  },
   build: {
     rolldownOptions: {
       output: {

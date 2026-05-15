@@ -17,6 +17,9 @@
     "isolatedModules": true,
     "sourceMap": true,
     "baseUrl": ".",
+    "paths": {
+      "@shared/*": ["src/shared/*"]
+    },
     "outDir": "dist",
     "moduleResolution": "bundler",
     "resolveJsonModule": true
