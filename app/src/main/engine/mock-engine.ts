@@ -14,18 +14,20 @@ export class MockEngine extends EventEmitter implements ConnectionEngine {
     return this._state
   }
 
-  override on(event: 'state', listener: (s: ConnState) => void): this {
-    return super.on(event, listener)
+  override on(event: 'state', listener: (s: ConnState) => void): this
+  override on(event: 'error', listener: (err: Error) => void): this
+  override on(event: 'state' | 'error', listener: (...args: never[]) => void): this {
+    return super.on(event, listener as (...args: unknown[]) => void)
   }
 
   connect(cfg: Config): void {
     this.clearTimer()
-    this.set({ kind: 'connecting', target: cfg.id, since: Date.now() })
+    this.set({ kind: 'connecting', configId: cfg.id, since: Date.now() })
     this.timer = setTimeout(() => {
       this.timer = null
       this.set({
         kind: 'connected',
-        config: cfg.id,
+        configId: cfg.id,
         since: Date.now(),
         ping: cfg.ping ?? 50,
         egress: cfg.host.split(':')[0] ?? '',

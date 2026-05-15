@@ -2,7 +2,7 @@ import  { type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'e
 import { ipcMain } from 'electron'
 
 import { COMMAND, STATE_CHANGED, STATE_SUBSCRIBE } from '@shared/ipc-channels'
-import  { type AppState, type Command, type Config } from '@shared/types'
+import  { type AppState, type Command, type Config, type ConfigPatch } from '@shared/types'
 
 import  { type AppStore } from '../store/app-store'
 
@@ -53,8 +53,8 @@ export function registerIpc(store: AppStore, opts: RegisterOptions): () => void 
         subscribers.delete(wc)
       })
     }
-    // Always send the current snapshot in response to subscribe —
-    // this is the renderer's "initial state" path. No separate getState.
+    // Send current snapshot so the renderer's first STATE_CHANGED event is
+    // the initial state. See preload/api.ts for the race-elimination context.
     wc.send(STATE_CHANGED, store.snapshot())
   }
 
@@ -106,7 +106,23 @@ function parseCommand(raw: unknown): Command {
     case 'updateConfig': {
       if (typeof obj.id !== 'string' || !obj.id) throw new Error('updateConfig: id required')
       if (!obj.patch || typeof obj.patch !== 'object') throw new Error('updateConfig: patch required')
-      return { type: 'updateConfig', id: obj.id, patch: obj.patch }
+      // Field-level shape validation. Anything not in EDITABLE_FIELDS is
+      // dropped at AppStore.updateConfig too, but rejecting at the IPC
+      // boundary surfaces malformed clients earlier.
+      const patch = obj.patch as Record<string, unknown>
+      const clean: ConfigPatch = {}
+      for (const [k, v] of Object.entries(patch)) {
+        if (k === 'url' || k === 'host' || k === 'proto' || k === 'variant' || k === 'country' || k === 'name') {
+          if (typeof v !== 'string') throw new Error(`updateConfig.patch.${k}: must be string`)
+          ;(clean as Record<string, unknown>)[k] = v
+        } else if (k === 'ping' || k === 'lastUsedAt') {
+          if (typeof v !== 'number') throw new Error(`updateConfig.patch.${k}: must be number`)
+          ;(clean as Record<string, unknown>)[k] = v
+        }
+        // Unknown keys are silently dropped (defense in depth — AppStore
+        // also filters via EDITABLE_FIELDS).
+      }
+      return { type: 'updateConfig', id: obj.id, patch: clean }
     }
 
     case 'setThemePreference': {

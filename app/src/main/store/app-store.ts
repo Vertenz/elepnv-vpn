@@ -44,6 +44,14 @@ export class AppStore extends EventEmitter {
     super()
     this.state = initial
     this.engine.on('state', conn => {
+      // Drop engine events whose subject config no longer exists. This
+      // protects against a deleted config's late `connected`/`error`
+      // event from a future async DaemonEngine stomping back over the
+      // `disconnected` state we set in deleteConfig.
+      if (conn.kind !== 'disconnected') {
+        const id = conn.configId
+        if (!this.state.configs.some(c => c.id === id)) return
+      }
       this.state = { ...this.state, conn }
       this.broadcast()
     })
@@ -91,11 +99,11 @@ export class AppStore extends EventEmitter {
     const cfg = this.findConfig(id)
     if (!cfg) throw new Error(`selectConfig: unknown id ${id}`)
     const now = Date.now()
-    const configs = this.state.configs.map(c => (c.id === id ? { ...c, lastUsedAt: now } : c))
+    const refreshed: Config = { ...cfg, lastUsedAt: now }
+    const configs = this.state.configs.map(c => (c.id === id ? refreshed : c))
     this.state = { ...this.state, configs, activeId: id }
     if (this.state.conn.kind === 'connecting' || this.state.conn.kind === 'connected') {
-      const refreshed = configs.find(c => c.id === id)
-      if (refreshed) this.engine.connect(refreshed)
+      this.engine.connect(refreshed)
     }
     this.prefs.update({ configs })
     this.broadcast()
@@ -108,14 +116,20 @@ export class AppStore extends EventEmitter {
       return
     }
     if (c.kind === 'error') {
-      const cfg = this.findConfig(c.lastConfig)
-      if (cfg) this.engine.connect(cfg)
+      const cfg = this.findConfig(c.configId)
+      if (!cfg) throw new Error(`toggleConnection: error.configId ${c.configId} no longer exists`)
+      this.engine.connect(cfg)
       return
     }
-    if (this.state.activeId) {
-      const cfg = this.findConfig(this.state.activeId)
-      if (cfg) this.engine.connect(cfg)
+    // c.kind === 'disconnected'
+    if (!this.state.activeId) return
+    const cfg = this.findConfig(this.state.activeId)
+    if (!cfg) {
+      // State invariant violation: activeId points to a config we don't have.
+      // Surface loudly rather than silently doing nothing.
+      throw new Error(`toggleConnection: activeId ${this.state.activeId} not found in configs`)
     }
+    this.engine.connect(cfg)
   }
 
   private addConfig(incoming: Config, activate: boolean): void {
@@ -147,8 +161,14 @@ export class AppStore extends EventEmitter {
       }
     }
     const merged: Config = { ...cur, ...clean }
-    // If URL-shape fields changed, re-validate the resulting Config.
-    if (clean.url !== undefined || clean.proto !== undefined || clean.host !== undefined) {
+    // Re-validate only when structural URL fields or name change.
+    // Metadata-only edits (ping, lastUsedAt) skip the full assertion.
+    if (
+      clean.url !== undefined ||
+      clean.proto !== undefined ||
+      clean.host !== undefined ||
+      clean.name !== undefined
+    ) {
       validateConfig(merged)
     }
     const configs = this.state.configs.map(c => (c.id === id ? merged : c))
@@ -214,7 +234,9 @@ function validateConfig(c: unknown): asserts c is Config {
   if (!c || typeof c !== 'object') throw new Error('config: not an object')
   const cfg = c as Record<string, unknown>
   if (typeof cfg.id !== 'string' || cfg.id.length === 0) throw new Error('config.id invalid')
-  if (typeof cfg.name !== 'string') throw new Error('config.name invalid')
+  if (typeof cfg.name !== 'string' || cfg.name.trim().length === 0) {
+    throw new Error('config.name invalid')
+  }
   if (typeof cfg.country !== 'string') throw new Error('config.country invalid')
   if (typeof cfg.proto !== 'string' || !ALLOWED_PROTOS.has(cfg.proto)) {
     throw new Error('config.proto invalid')

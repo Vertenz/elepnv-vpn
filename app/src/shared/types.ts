@@ -14,18 +14,22 @@ export interface Config {
   ping?: number
 }
 
+// `configId` is the connection's subject across all states: the config being
+// connected to (`connecting`), currently connected to (`connected`), or being
+// disconnected from (`disconnecting`). For `error`, `configId` is the last
+// config the engine attempted, so a retry knows what to reconnect to.
 export type ConnState =
   | { kind: 'disconnected' }
-  | { kind: 'connecting'; target: ConfigId; since: number }
+  | { kind: 'connecting'; configId: ConfigId; since: number }
   | {
       kind: 'connected'
-      config: ConfigId
+      configId: ConfigId
       since: number
       ping: number
       egress: string
     }
-  | { kind: 'disconnecting' }
-  | { kind: 'error'; reason: string; lastConfig: ConfigId }
+  | { kind: 'disconnecting'; configId: ConfigId }
+  | { kind: 'error'; reason: string; configId: ConfigId }
 
 export type Theme = 'light' | 'dark'
 export type ThemePreference = 'system' | 'light' | 'dark'
