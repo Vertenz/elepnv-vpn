@@ -1,21 +1,22 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { useMemo, useState } from 'react'
 
+import { parseConfigUrl } from '@shared/parse-url'
 import type { Config } from '@shared/types'
 
 import { BottomSheet } from './BottomSheet'
 import { IconAlert, IconCheck, IconPlus, IconX } from './icons'
-import { parseConfigUrl } from '@shared/parse-url'
 
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSave: (config: Config, activateNow: boolean) => void
+  editing?: Config
+  onSave: (data: { config: Config; activateNow: boolean }) => void
 }
 
 const URL_PLACEHOLDER = 'vless://… or vmess://… or ss://… or trojan://…'
 
-export function AddSheet({ open, onOpenChange, onSave }: Props) {
+export function AddSheet({ open, onOpenChange, editing, onSave }: Props) {
   return (
     <BottomSheet
       describedBy="add-subtitle"
@@ -23,7 +24,7 @@ export function AddSheet({ open, onOpenChange, onSave }: Props) {
       open={open}
       onOpenChange={onOpenChange}
     >
-      <AddSheetForm onOpenChange={onOpenChange} onSave={onSave} />
+      <AddSheetForm editing={editing} onOpenChange={onOpenChange} onSave={onSave} />
     </BottomSheet>
   )
 }
@@ -31,13 +32,16 @@ export function AddSheet({ open, onOpenChange, onSave }: Props) {
 // Lives inside <Dialog.Portal>, which un-mounts on close — so local state
 // resets on every fresh open without an effect.
 function AddSheetForm({
+  editing,
   onOpenChange,
   onSave,
 }: {
+  editing?: Config
   onOpenChange: (open: boolean) => void
-  onSave: (config: Config, activateNow: boolean) => void
+  onSave: (data: { config: Config; activateNow: boolean }) => void
 }) {
-  const [url, setUrl] = useState('')
+  const isEdit = editing != null
+  const [url, setUrl] = useState(editing?.url ?? '')
   const [activateNow, setActivateNow] = useState(true)
 
   const parsed = useMemo(() => parseConfigUrl(url), [url])
@@ -49,7 +53,7 @@ function AddSheetForm({
       <div className="add-sheet__head">
         <div>
           <Dialog.Title className="sheet__title sheet__title--lg" id="add-title">
-            Add new config
+            {isEdit ? 'Edit config' : 'Add new config'}
           </Dialog.Title>
           <Dialog.Description className="sheet__subtitle mono" id="add-subtitle">
             Paste a vless://, vmess://, ss:// or trojan:// URL
@@ -72,7 +76,7 @@ function AddSheetForm({
           rows={3}
           spellCheck={false}
           value={url}
-          onChange={(e) => {
+          onChange={e => {
             setUrl(e.target.value)
           }}
         />
@@ -100,24 +104,30 @@ function AddSheetForm({
 
         {valid && (
           <div className="kv-grid">
-            {parsed.preview.extras.map((kv) => (
-              <KV key={kv.k} k={kv.k} v={kv.v} />
-            ))}
+            {parsed.preview.extras
+              .filter(kv => !(isEdit && kv.k === 'name'))
+              .map(kv => (
+                <KV key={kv.k} k={kv.k} v={kv.v} />
+              ))}
           </div>
         )}
       </div>
 
       <div className="add-sheet__actions">
-        <label className="checkbox-label">
-          <input
-            checked={activateNow}
-            type="checkbox"
-            onChange={(e) => {
-              setActivateNow(e.target.checked)
-            }}
-          />
-          Activate immediately
-        </label>
+        {isEdit ? (
+          <span />
+        ) : (
+          <label className="checkbox-label">
+            <input
+              checked={activateNow}
+              type="checkbox"
+              onChange={e => {
+                setActivateNow(e.target.checked)
+              }}
+            />
+            Activate immediately
+          </label>
+        )}
         <div style={{ display: 'flex', gap: 8 }}>
           <Dialog.Close asChild>
             <button className="btn btn--ghost" type="button">
@@ -129,13 +139,30 @@ function AddSheetForm({
             disabled={!valid}
             type="button"
             onClick={() => {
-              if (parsed.ok) {
-                onSave(parsed.build(), activateNow)
-                onOpenChange(false)
+              if (!parsed.ok) return
+              const built = parsed.build()
+              if (isEdit && editing) {
+                // Preserve original id, addedAt, name, ping, lastUsedAt.
+                // Only URL-derived fields change.
+                onSave({
+                  config: {
+                    ...editing,
+                    url: built.url,
+                    host: built.host,
+                    proto: built.proto,
+                    variant: built.variant,
+                    country: built.country,
+                  },
+                  activateNow: false,
+                })
+              } else {
+                onSave({ config: built, activateNow })
               }
+              onOpenChange(false)
             }}
           >
-            <IconPlus size={14} stroke={2} /> Save config
+            <IconPlus size={14} stroke={2} />{' '}
+            {isEdit ? 'Save changes' : 'Save config'}
           </button>
         </div>
       </div>
