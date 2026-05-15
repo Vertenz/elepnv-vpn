@@ -1,19 +1,77 @@
 import path from 'node:path'
 
-import { app, BrowserWindow, session } from 'electron'
+import { app, BrowserWindow, Menu, nativeTheme, session } from 'electron'
 import { downloadChromeExtension } from 'electron-devtools-installer/dist/downloadChromeExtension'
 import started from 'electron-squirrel-startup'
+
+import type { AppState } from '@shared/types'
+
+import { MockEngine } from './engine/mock-engine'
+import { registerIpc } from './ipc/handlers'
+import { PrefsStore } from './persistence/prefs-store'
+import { AppStore } from './store/app-store'
+import { buildSampleConfigs } from './store/seed'
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
   app.quit()
 }
 
+let prefsStore: PrefsStore | null = null
+
+const SEED_DISABLED = process.env.ELEPN_SEED === '0'
+
+function bootstrap(): void {
+  const { store: prefs, wasMissing } = PrefsStore.loadSync()
+  prefsStore = prefs
+
+  if (wasMissing && !app.isPackaged && !SEED_DISABLED) {
+    prefs.update({ configs: buildSampleConfigs() })
+  }
+
+  const persisted = prefs.snapshot()
+  const theme =
+    persisted.themePreference === 'system'
+      ? nativeTheme.shouldUseDarkColors
+        ? 'dark'
+        : 'light'
+      : persisted.themePreference
+
+  const initial: AppState = {
+    configs: persisted.configs,
+    activeId: persisted.configs[0]?.id ?? null,
+    conn: { kind: 'disconnected' },
+    theme,
+    themePreference: persisted.themePreference,
+  }
+
+  const engine = new MockEngine()
+  const store = new AppStore(engine, prefs, initial)
+
+  nativeTheme.on('updated', () => {
+    store.onSystemThemeChanged()
+  })
+
+  const expectedOrigin = MAIN_WINDOW_VITE_DEV_SERVER_URL ?? 'file://'
+  registerIpc(store, { expectedOrigin })
+}
+
 const createWindow = () => {
-  // Create the browser window.
+  // Fixed 720x520 frameless window — the renderer paints its own title bar.
   const mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: 720,
+    height: 520,
+    minWidth: 720,
+    minHeight: 520,
+    maxWidth: 720,
+    maxHeight: 520,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    frame: false,
+    titleBarStyle: 'hidden',
+    title: 'elepn',
+    backgroundColor: '#7a7a7a',
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -23,11 +81,10 @@ const createWindow = () => {
   })
 
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  mainWindow.webContents.on('will-navigate', (event) => {
+  mainWindow.webContents.on('will-navigate', event => {
     event.preventDefault()
   })
 
-  // and load the index.html of the app.
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     void mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL)
   } else {
@@ -37,25 +94,20 @@ const createWindow = () => {
   }
 
   if (!app.isPackaged) {
-    mainWindow.webContents.openDevTools()
+    mainWindow.webContents.openDevTools({ mode: 'detach' })
   }
+
+  return mainWindow
 }
 
 const installDevTools = async () => {
-  if (app.isPackaged) {
-    return
-  }
-
+  if (app.isPackaged) return
   try {
     const reactDevToolsId = 'fmkadmapgofadopljbjfkapdkoienihi'
     const installedExtension = session.defaultSession.extensions
       .getAllExtensions()
-      .find((extension) => extension.id === reactDevToolsId)
-
-    if (installedExtension) {
-      return
-    }
-
+      .find(extension => extension.id === reactDevToolsId)
+    if (installedExtension) return
     const extensionPath = await downloadChromeExtension(reactDevToolsId)
     await session.defaultSession.extensions.loadExtension(extensionPath, {
       allowFileAccess: true,
@@ -65,17 +117,17 @@ const installDevTools = async () => {
   }
 }
 
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
-void app.whenReady().then(async () => {
-  await installDevTools()
+void app.whenReady().then(() => {
+  Menu.setApplicationMenu(null)
+  bootstrap()
   createWindow()
+  void installDevTools()
 })
 
-// Quit when all windows are closed, except on macOS. There, it's common
-// for applications and their menu bar to stay active until the user quits
-// explicitly with Cmd + Q.
+app.on('before-quit', () => {
+  prefsStore?.flushSync()
+})
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
@@ -83,12 +135,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('activate', () => {
-  // On OS X it's common to re-create a window in the app when the
-  // dock icon is clicked and there are no other windows open.
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow()
   }
 })
-
-// In this file you can include the rest of your app's specific main process
-// code. You can also put them in separate files and import them here.
