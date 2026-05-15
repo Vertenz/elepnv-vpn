@@ -39,7 +39,7 @@ function describe(conn: ConnState, config?: Config | null): { title: string; sub
     case 'error':
       return {
         title: 'Connection failed',
-        sub: `${conn.reason}  ·  retry in 3s`,
+        sub: conn.reason,
       }
     case 'disconnected':
       return {

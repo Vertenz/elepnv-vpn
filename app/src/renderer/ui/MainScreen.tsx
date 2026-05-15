@@ -40,12 +40,15 @@ function toPowerState(conn: ConnState): PowerState {
   }
 }
 
+const ERROR_AUTODISMISS_MS = 4000
+
 export function MainScreen() {
   const {
     configs,
     activeId,
     conn,
     themePreference,
+    lastError,
     toggleConnection,
     selectConfig,
     addConfig,
@@ -53,6 +56,7 @@ export function MainScreen() {
     deleteConfig,
     duplicateConfig,
     toggleTheme,
+    dismissError,
   } = useStore()
 
   const [overlay, setOverlay] = useState<Overlay>({ kind: 'none' })
@@ -64,6 +68,13 @@ export function MainScreen() {
   const activeConfig = configs.find(c => c.id === activeId) ?? null
   const state = toPowerState(conn)
   const overlayOpen = overlay.kind !== 'none'
+
+  // Auto-dismiss the error toast a few seconds after it appears.
+  useEffect(() => {
+    if (!lastError) return
+    const id = window.setTimeout(dismissError, ERROR_AUTODISMISS_MS)
+    return () => { window.clearTimeout(id) }
+  }, [lastError, dismissError])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -128,6 +139,7 @@ export function MainScreen() {
               )}
               <div className="footer-meta">
                 <span className="footer-meta__cell mono">{configs.length} saved configs</span>
+                {/* TODO(daemon): real throughput when DaemonEngine reports xray-core stats. */}
                 <span className="footer-meta__cell mono">
                   {conn.kind === 'connected' ? '↑ 1.2 MB/s  ·  ↓ 8.4 MB/s' : '—'}
                 </span>
@@ -163,6 +175,20 @@ export function MainScreen() {
             }}
           />
 
+          {lastError && (
+            <div className="error-toast" role="alert">
+              <span className="error-toast__msg mono">{lastError.message}</span>
+              <button
+                aria-label="Dismiss error"
+                className="error-toast__close"
+                type="button"
+                onClick={dismissError}
+              >
+                ×
+              </button>
+            </div>
+          )}
+
           <AddSheet
             editing={overlay.kind === 'add' ? overlay.editing : undefined}
             open={overlay.kind === 'add'}
@@ -170,6 +196,8 @@ export function MainScreen() {
               if (!open) setOverlay({ kind: 'none' })
             }}
             onSave={({ config, activateNow }) => {
+              // AddSheet calls onOpenChange(false) right after onSave, which
+              // closes the overlay — we don't need to setOverlay here.
               if (overlay.kind === 'add' && overlay.editing) {
                 updateConfig(overlay.editing.id, {
                   url: config.url,
@@ -181,7 +209,6 @@ export function MainScreen() {
               } else {
                 addConfig(config, activateNow)
               }
-              setOverlay({ kind: 'none' })
             }}
           />
         </BottomSheetContainerProvider>
