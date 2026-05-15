@@ -1,0 +1,1054 @@
+/* ─── Window shell ─────────────────────────────────────────────────────── */
+
+.window-shell {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: 'Geist', system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+.titlebar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  padding: 0 12px;
+  color: var(--chrome-fg);
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--line);
+
+  /* Make the title bar draggable in frameless mode. Child .no-drag elements
+     opt back out so they remain clickable. */
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.titlebar__dots {
+  display: flex;
+  gap: 8px;
+}
+
+.titlebar__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 12%);
+}
+
+.titlebar__title {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+
+.titlebar__spacer {
+  width: 56px;
+}
+
+.no-drag,
+button,
+input,
+textarea,
+select,
+[role='button'] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.window-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.window-body__inner {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* ─── Header ───────────────────────────────────────────────────────────── */
+
+.hi-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px 0;
+}
+
+.hi-header__brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.hi-header__title {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.hi-header__version {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.12em;
+}
+
+.hi-header__actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* ─── Icon button (header, close, more) ────────────────────────────────── */
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+
+.icon-btn:hover {
+  color: var(--ink);
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+.icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.icon-btn--ghost {
+  width: auto;
+  height: auto;
+  padding: 5px;
+  color: var(--muted);
+  border-radius: 6px;
+}
+
+.icon-btn--ghost:hover {
+  color: var(--ink);
+  background: var(--surface-2);
+  border-color: transparent;
+}
+
+.icon-btn--more {
+  width: 26px;
+  height: 26px;
+  color: var(--muted);
+  border-radius: 6px;
+}
+
+.icon-btn--more:hover {
+  color: var(--ink);
+  background: var(--surface-2);
+  border-color: transparent;
+}
+
+/* ─── Power button ─────────────────────────────────────────────────────── */
+
+.power-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 144px;
+  height: 144px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.power-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.power-btn:active {
+  transform: scale(0.98);
+}
+
+.power-btn[data-state='disconnected'] {
+  color: var(--ink);
+  background: var(--surface);
+  border: 1.5px solid var(--line-strong);
+  box-shadow: var(--shadow-card);
+}
+
+.power-btn[data-state='connecting'] {
+  color: var(--warn);
+  background: var(--warn-soft);
+  border: 1.5px solid var(--warn);
+  box-shadow: var(--shadow-card);
+}
+
+.power-btn[data-state='connected'] {
+  color: #fff;
+  background: var(--accent);
+  border: 1.5px solid var(--accent);
+  box-shadow:
+    0 12px 30px -10px rgb(46 171 107 / 55%),
+    0 0 0 6px var(--accent-soft);
+}
+
+.power-btn[data-state='error'] {
+  color: var(--err);
+  background: var(--err-soft);
+  border: 1.5px solid var(--err);
+  animation: err-pulse 1.6s ease-out infinite;
+}
+
+.power-btn__spinner {
+  position: absolute;
+  inset: -1px;
+  border: 1.5px dashed var(--warn);
+  border-left-color: transparent;
+  border-radius: 50%;
+  animation: spin 1.6s linear infinite;
+}
+
+.power-btn__halo {
+  position: absolute;
+  inset: -1px;
+  border: 1.5px solid var(--accent);
+  border-radius: 50%;
+  opacity: 0;
+  animation: pulse-ring 2.4s ease-out infinite;
+}
+
+.power-btn__label {
+  margin-top: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  opacity: 0.85;
+}
+
+/* ─── Status block ─────────────────────────────────────────────────────── */
+
+.status {
+  margin-top: 20px;
+  text-align: center;
+}
+
+.status__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.status__dot {
+  width: 8px;
+  height: 8px;
+  background: currentcolor;
+  border-radius: 50%;
+}
+
+.status[data-kind='disconnected'] .status__dot {
+  background: var(--muted);
+}
+
+.status[data-kind='connected'] {
+  color: var(--accent);
+}
+
+.status[data-kind='connected'] .status__dot {
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+.status[data-kind='connecting'] {
+  color: var(--warn);
+}
+
+.status[data-kind='connecting'] .status__dot,
+.status[data-kind='disconnecting'] .status__dot {
+  animation: caret 1s infinite;
+}
+
+.status[data-kind='disconnecting'] {
+  color: var(--warn);
+}
+
+.status[data-kind='error'] {
+  color: var(--err);
+}
+
+.status__sub {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* ─── Hero / main layout ───────────────────────────────────────────────── */
+
+.main {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  transition: opacity 0.2s;
+}
+
+.main[data-dim='true'] {
+  opacity: 0.55;
+  filter: blur(0.5px);
+}
+
+.hero {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 0 28px;
+}
+
+.retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 7px 14px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--err);
+  cursor: pointer;
+  background: var(--err-soft);
+  border: 1px solid var(--err);
+  border-radius: 8px;
+}
+
+.retry-btn:hover {
+  background: color-mix(in srgb, var(--err) 18%, transparent);
+}
+
+.retry-btn:focus-visible {
+  outline: 2px solid var(--err);
+  outline-offset: 2px;
+}
+
+.footer-section {
+  padding: 0 20px 16px;
+}
+
+.footer-meta {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.footer-meta__cell {
+  white-space: nowrap;
+}
+
+/* ─── Active config card ───────────────────────────────────────────────── */
+
+.active-card {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding: 10px 12px;
+  font-family: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow-card);
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.active-card:hover {
+  border-color: var(--line-strong);
+}
+
+.active-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.active-card[disabled] {
+  cursor: default;
+}
+
+.active-card__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.active-card__name {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.active-card__sub {
+  margin-top: 2px;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.active-card__ping {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.active-card__chevron {
+  color: var(--muted);
+}
+
+.empty-card {
+  display: block;
+  width: 100%;
+  padding: 14px 12px;
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  color: var(--muted);
+  cursor: pointer;
+  background: var(--surface);
+  border: 1px dashed var(--line-strong);
+  border-radius: 10px;
+}
+
+.empty-card:hover {
+  border-color: var(--ink-2);
+}
+
+/* ─── Flag pill ────────────────────────────────────────────────────────── */
+
+.flag {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 15px;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+
+/* ─── Bottom sheet (Radix Dialog) ──────────────────────────────────────── */
+
+.sheet-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  background: rgb(20 20 20 / 18%);
+  animation: backdrop-in 0.2s ease-out;
+}
+
+.sheet {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  max-height: 82%;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  outline: none;
+  box-shadow: var(--shadow-pop);
+  animation: panel-in 0.22s ease-out;
+}
+
+.sheet__head {
+  padding: 8px 16px 0;
+}
+
+.sheet__handle {
+  width: 36px;
+  height: 4px;
+  margin: 0 auto;
+  background: var(--line-strong);
+  border-radius: 99px;
+}
+
+.sheet__header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+}
+
+.sheet__title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.sheet__title--lg {
+  font-size: 16px;
+}
+
+.sheet__subtitle {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ─── Picker search ────────────────────────────────────────────────────── */
+
+.search {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  margin-top: 8px;
+  padding: 7px 10px;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.search:focus-within {
+  border-color: var(--line-strong);
+}
+
+.search__input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+/* ─── Add-new row inside picker ────────────────────────────────────────── */
+
+.add-row-wrap {
+  padding: 10px 16px 4px;
+}
+
+.add-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding: 10px 12px;
+  font-family: inherit;
+  color: var(--accent-deep);
+  text-align: left;
+  cursor: pointer;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+}
+
+.add-row:hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.add-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.add-row__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 7px;
+}
+
+.add-row__body {
+  flex: 1;
+  text-align: left;
+}
+
+.add-row__title {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.add-row__hint {
+  display: block;
+  margin-top: 1px;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+/* ─── Config list ──────────────────────────────────────────────────────── */
+
+.config-list {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  padding: 4px 8px 12px;
+  overflow-y: auto;
+}
+
+.config-list__empty {
+  padding: 20px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.config-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding: 10px;
+  font-family: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  transition: background 0.12s;
+}
+
+.config-row:hover {
+  background: var(--surface-2);
+}
+
+.config-row[data-active='true'] {
+  background: var(--accent-soft);
+}
+
+.config-row[data-active='true']:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.config-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.config-row__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.config-row__name {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.config-row[data-active='true'] .config-row__name {
+  font-weight: 600;
+}
+
+.config-row__name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.config-row__rename-input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  outline: none;
+}
+
+.config-row__rename-input:focus {
+  border-color: var(--accent);
+}
+
+.active-chip {
+  padding: 1px 6px;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: #fff;
+  background: var(--accent);
+  border-radius: 99px;
+}
+
+.config-row__sub {
+  margin-top: 1px;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.config-row__meta {
+  min-width: 54px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.config-row__ping {
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.config-row__ping-unit {
+  color: var(--muted);
+}
+
+.config-row__age {
+  margin-top: 1px;
+  font-size: 9px;
+  color: var(--muted);
+}
+
+/* ─── Radix menus (Context + Dropdown) ─────────────────────────────────── */
+
+.menu {
+  z-index: 50;
+  min-width: 210px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  outline: none;
+  box-shadow: var(--shadow-pop);
+}
+
+.menu__separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line);
+}
+
+.menu__item {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+  background: transparent;
+  border-radius: 6px;
+  outline: none;
+}
+
+.menu__item[data-highlighted] {
+  background: var(--surface-2);
+}
+
+.menu__item[data-danger='true'] {
+  color: var(--err);
+}
+
+.menu__item[data-danger='true'][data-highlighted] {
+  background: var(--err-soft);
+}
+
+.menu__item-icon {
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.menu__item[data-danger='true'] .menu__item-icon {
+  color: var(--err);
+}
+
+.menu__item-label {
+  flex: 1;
+}
+
+.menu__item-shortcut {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+.menu__item[data-danger='true'] .menu__item-shortcut {
+  color: var(--err);
+}
+
+/* ─── Delete confirm inside menu ───────────────────────────────────────── */
+
+.delete-confirm {
+  min-width: 220px;
+  padding: 6px 8px;
+}
+
+.delete-confirm__prompt {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.delete-confirm__name {
+  color: var(--err);
+}
+
+.delete-confirm__actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+/* ─── Buttons (small, ghost, primary, danger) ──────────────────────────── */
+
+.btn {
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: 8px;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.btn--ghost {
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px solid var(--line-strong);
+}
+
+.btn--ghost:hover {
+  background: var(--surface-2);
+}
+
+.btn--primary {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--accent-deep);
+  border-color: var(--accent-deep);
+}
+
+.btn--primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.btn--xs-ghost {
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+}
+
+.btn--xs-ghost:hover {
+  background: var(--surface-2);
+}
+
+.btn--xs-danger {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: #fff;
+  background: var(--err);
+  border: 1px solid var(--err);
+  border-radius: 6px;
+}
+
+.btn--xs-danger:hover {
+  background: color-mix(in srgb, var(--err) 85%, black);
+}
+
+/* ─── Add sheet ────────────────────────────────────────────────────────── */
+
+.add-sheet {
+  padding: 18px;
+}
+
+.add-sheet__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.add-sheet__url-field {
+  position: relative;
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.add-sheet__url-field:focus-within {
+  border-color: var(--line-strong);
+}
+
+.add-sheet__url-input {
+  display: block;
+  width: 100%;
+  padding: 0;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  word-break: break-all;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+}
+
+.caret {
+  display: inline-block;
+  width: 1.5px;
+  height: 11px;
+  margin-left: 2px;
+  background: var(--accent);
+  animation: caret 1s infinite;
+}
+
+.detected-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.detected-row__rule {
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.detected-row__status {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.detected-row__status--ok {
+  color: var(--accent);
+}
+
+.detected-row__status--bad {
+  color: var(--err);
+}
+
+.kv-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 18px;
+  font-size: 12px;
+}
+
+.kv {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.kv__key {
+  min-width: 42px;
+  color: var(--muted);
+}
+
+.kv__value {
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.add-sheet__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 18px;
+}
+
+.checkbox-label {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.checkbox-label input {
+  accent-color: var(--accent);
+}
