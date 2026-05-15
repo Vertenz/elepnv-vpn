@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { useStore } from '../store/use-store'
 import type { Config, ConnState } from '@shared/types'
+
+import { useStore } from '../store/use-store'
 
 import { ActiveConfigCard } from './ActiveConfigCard'
 import { AddSheet } from './AddSheet'
@@ -14,6 +15,11 @@ import { StatusBlock } from './StatusBlock'
 import { HiWindow } from './Window'
 
 type PowerState = 'disconnected' | 'connecting' | 'connected' | 'error'
+
+type Overlay =
+  | { kind: 'none' }
+  | { kind: 'picker' }
+  | { kind: 'add'; editing?: Config }
 
 function toPowerState(conn: ConnState): PowerState {
   switch (conn.kind) {
@@ -39,6 +45,8 @@ export function MainScreen() {
     configs,
     activeId,
     conn,
+    theme,
+    themePreference,
     toggleConnection,
     selectConfig,
     addConfig,
@@ -48,31 +56,27 @@ export function MainScreen() {
     toggleTheme,
   } = useStore()
 
-  const [pickerOpen, setPickerOpen] = useState(false)
-  const [addOpen, setAddOpen] = useState(false)
+  const [overlay, setOverlay] = useState<Overlay>({ kind: 'none' })
   const [bodyEl, setBodyEl] = useState<HTMLDivElement | null>(null)
   const bodyRef = useCallback((node: HTMLDivElement | null) => {
     setBodyEl(node)
   }, [])
 
-  const activeConfig =
-    configs.find((c: Config) => c.id === activeId) ??
-    configs.find(
-      (c: Config) =>
-        (conn.kind === 'connected' && conn.config === c.id) ||
-        (conn.kind === 'connecting' && conn.target === c.id),
-    ) ??
-    null
-
+  const activeConfig = configs.find(c => c.id === activeId) ?? null
   const state = toPowerState(conn)
+  const overlayOpen = overlay.kind !== 'none'
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLElement && e.target.matches('input, textarea')) return
-      if (e.key.toLowerCase() === 'k' && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault()
-        setPickerOpen((o) => !o)
-      }
+      if (e.key.toLowerCase() !== 'k' || !(e.metaKey || e.ctrlKey)) return
+      e.preventDefault()
+      setOverlay(cur => {
+        // Cmd+K only toggles picker. AddSheet is invariant under Cmd+K
+        // (user closes it via Esc/click-outside/Cancel).
+        if (cur.kind === 'add') return cur
+        return cur.kind === 'picker' ? { kind: 'none' } : { kind: 'picker' }
+      })
     }
     window.addEventListener('keydown', onKey)
     return () => {
@@ -80,14 +84,16 @@ export function MainScreen() {
     }
   }, [])
 
-  const overlayOpen = pickerOpen || addOpen
-
   return (
     <HiWindow title="elepn">
       <div ref={bodyRef} className="window-body__inner">
         <BottomSheetContainerProvider container={bodyEl}>
           <div className="main" data-dim={overlayOpen}>
-            <HiHeader onRouting={() => void 0} onSettings={toggleTheme} />
+            <HiHeader
+              theme={theme}
+              themePreference={themePreference}
+              onToggleTheme={toggleTheme}
+            />
 
             <div className="hero">
               <PowerButton state={state} onClick={toggleConnection} />
@@ -108,7 +114,7 @@ export function MainScreen() {
                   config={activeConfig}
                   ping={conn.kind === 'connected' ? conn.ping : (activeConfig.ping ?? null)}
                   onClick={() => {
-                    setPickerOpen(true)
+                    setOverlay({ kind: 'picker' })
                   }}
                 />
               ) : (
@@ -116,7 +122,7 @@ export function MainScreen() {
                   className="empty-card"
                   type="button"
                   onClick={() => {
-                    setPickerOpen(true)
+                    setOverlay({ kind: 'picker' })
                   }}
                 >
                   No config selected — tap to pick one
@@ -134,30 +140,50 @@ export function MainScreen() {
           <PickerPanel
             activeId={activeId}
             configs={configs}
-            open={pickerOpen}
+            open={overlay.kind === 'picker'}
             onAddRequested={() => {
-              setPickerOpen(false)
-              setAddOpen(true)
+              setOverlay({ kind: 'add' })
             }}
-            onDelete={deleteConfig}
-            onDuplicate={duplicateConfig}
-            onEditUrl={() => {
-              setPickerOpen(false)
-              setAddOpen(true)
+            onDelete={id => {
+              deleteConfig(id)
             }}
-            onOpenChange={setPickerOpen}
+            onDuplicate={id => {
+              duplicateConfig(id)
+            }}
+            onEditUrl={id => {
+              const cfg = configs.find(c => c.id === id)
+              if (cfg) setOverlay({ kind: 'add', editing: cfg })
+            }}
+            onOpenChange={open => {
+              setOverlay(open ? { kind: 'picker' } : { kind: 'none' })
+            }}
             onRename={(id, name) => {
               updateConfig(id, { name })
             }}
-            onSelect={selectConfig}
+            onSelect={id => {
+              selectConfig(id)
+            }}
           />
 
           <AddSheet
-            open={addOpen}
-            onOpenChange={setAddOpen}
-            onSave={(config, activateNow) => {
-              addConfig(config)
-              if (activateNow) selectConfig(config.id)
+            editing={overlay.kind === 'add' ? overlay.editing : undefined}
+            open={overlay.kind === 'add'}
+            onOpenChange={open => {
+              if (!open) setOverlay({ kind: 'none' })
+            }}
+            onSave={({ config, activateNow }) => {
+              if (overlay.kind === 'add' && overlay.editing) {
+                updateConfig(overlay.editing.id, {
+                  url: config.url,
+                  host: config.host,
+                  proto: config.proto,
+                  variant: config.variant,
+                  country: config.country,
+                })
+              } else {
+                addConfig(config, activateNow)
+              }
+              setOverlay({ kind: 'none' })
             }}
           />
         </BottomSheetContainerProvider>
