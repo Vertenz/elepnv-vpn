@@ -40,6 +40,7 @@
     "@types/electron-squirrel-startup": "^1.0.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@types/write-file-atomic": "^4.0.3",
     "@typescript-eslint/eslint-plugin": "^8.59.3",
     "@typescript-eslint/parser": "^8.59.3",
     "@vitejs/plugin-react": "^5.2.0",
@@ -69,7 +70,8 @@
     "@radix-ui/themes": "^3.3.0",
     "electron-squirrel-startup": "^1.0.1",
     "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react-dom": "^19.2.6",
+    "write-file-atomic": "^8.0.0"
   },
   "overrides": {
     "tar": "^7.5.15"
