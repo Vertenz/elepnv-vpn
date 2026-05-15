@@ -1,4 +1,4 @@
-import type { Config, ConfigProto } from '@shared/types'
+import type { Config, ConfigProto } from './types'
 
 export type ParsedConfig =
   | { ok: true; preview: ParsedPreview; build: () => Config }
@@ -12,12 +12,14 @@ export interface ParsedPreview {
 }
 
 const PROTOS: ConfigProto[] = ['vless', 'vmess', 'ss', 'trojan']
+const PROTO_RE = /^(vless|vmess|ss|trojan):\/\/(.*)$/i
+const COUNTRY_RE = /^([A-Z]{2})[-_ ]/
 
 export function parseConfigUrl(raw: string): ParsedConfig {
   const trimmed = raw.trim()
   if (!trimmed) return { ok: false, reason: 'empty input' }
 
-  const match = /^(vless|vmess|ss|trojan):\/\/(.*)$/i.exec(trimmed)
+  const match = trimmed.match(PROTO_RE)
   if (!match?.[1] || match[2] === undefined) {
     return {
       ok: false,
@@ -75,7 +77,10 @@ export function parseConfigUrl(raw: string): ParsedConfig {
     ok: true,
     preview,
     build: () => ({
-      id: `${proto}-${Math.random().toString(36).slice(2, 8)}`,
+      // Renderer-side placeholder id. Main authoritatively reassigns
+      // via crypto.randomUUID() in addConfig, so this value never
+      // reaches storage. Web Crypto is available in Electron renderer.
+      id: crypto.randomUUID(),
       name,
       country,
       proto,
@@ -100,7 +105,7 @@ function describeVariant(proto: ConfigProto, params: URLSearchParams): string {
 }
 
 function guessCountry(fragment: string): string | null {
-  const m = /^([A-Z]{2})[-_ ]/.exec(fragment)
+  const m = fragment.match(COUNTRY_RE)
   return m?.[1] ?? null
 }
 

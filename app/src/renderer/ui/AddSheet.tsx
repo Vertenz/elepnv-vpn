@@ -5,7 +5,7 @@ import type { Config } from '@shared/types'
 
 import { BottomSheet } from './BottomSheet'
 import { IconAlert, IconCheck, IconPlus, IconX } from './icons'
-import { parseConfigUrl } from './parseUrl'
+import { parseConfigUrl } from '@shared/parse-url'
 
 interface Props {
   open: boolean
