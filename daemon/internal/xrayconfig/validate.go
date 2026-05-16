@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"elepn/daemon/internal/derr"
+	"elepn/daemon/internal/supervisor"
 )
 
 // ValidateResult is the structured result of one `xray run -test` invocation.
@@ -105,9 +106,13 @@ func Validate(ctx context.Context, xrayPath, cfgPath string) (ValidateResult, er
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, xrayPath, "run", "-test", "-c", cfgPath)
+	cmd.Env = supervisor.MinimalChildEnv()
 	// Put the subprocess in its own process group so we can SIGKILL the whole
 	// group (covering grandchild processes such as pipelines in shell scripts).
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid:   true,
+		Pdeathsig: syscall.SIGTERM,
+	}
 	// Override the default cancel function: kill the entire process group so
 	// that grandchildren (e.g., `yes` in a pipeline) are reaped along with the
 	// shell and stdout/stderr pipes are closed promptly.

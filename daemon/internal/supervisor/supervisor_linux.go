@@ -71,6 +71,7 @@ func (s *Supervisor) Start(ctx context.Context, configPath string) (*Child, erro
 		return nil, err
 	}
 	cmd := exec.Command(xrayPath, "run", "-c", configPath)
+	cmd.Env = MinimalChildEnv()
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Pdeathsig: syscall.SIGTERM, // child dies if daemon dies
 		Setpgid:   true,            // P1-2: own process group
