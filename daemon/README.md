@@ -58,10 +58,7 @@ socat - UNIX-CONNECT:/tmp/xrayd-run/control.sock
 
 ## Adding a config
 
-Plan 2 ships the `Configs.*` RPC family. The submitted config must declare
-exactly one SOCKS5 inbound on the expected address (default
-`127.0.0.1:10808`), with `auth: "noauth"` and no public bind. Cert/key/log
-paths must live under `/usr/local/share/xray/`.
+Plan 2 ships the `Configs.*` RPC family.
 
 ```bash
 socat - UNIX-CONNECT:/run/xrayd/control.sock
@@ -77,6 +74,45 @@ socat - UNIX-CONNECT:/run/xrayd/control.sock
 
 Subscribers receive `{"jsonrpc":"2.0","method":"Configs.Changed","params":{"added":["..."]}}`
 after every successful Add and `{"removed":["..."]}` after every Remove.
+
+### Inbound contract
+
+The submitted config MUST contain **exactly one inbound**, which MUST be a
+SOCKS5 listener on the daemon's expected address (default
+`127.0.0.1:10808`, override via `XRAYD_EXPECTED_SOCKS_ADDR`) with
+`auth: "noauth"`. Public binds (`0.0.0.0`, `::`) are rejected.
+
+Configs with the canonical "SOCKS + HTTP" pair from the upstream
+xray-core docs (lines 107–137) are rejected because the renderer is the
+single source of inbound shape — it always synthesises one SOCKS5 inbound
+from the user's `vless://` / `vmess://` URL. If you're submitting configs
+by hand via `socat`, trim down to one SOCKS5 inbound.
+
+### Path restrictions in v1
+
+The daemon refuses any filesystem path under a path-bearing JSON key
+(`certificateFile`, `keyFile`, `caCertificateFile`, `access`, `error`,
+`path`, `dat`, `file`) that does not resolve under `/usr/local/share/xray/`.
+This is enforced regardless of what the path "looks like" — `"cert.pem"`,
+`"/etc/letsencrypt/live/<domain>/fullchain.pem"`, and `"~/cert.pem"` are
+all rejected. The `ext:` selector is banned entirely.
+
+Two implications you'll hit immediately:
+
+- **TLS material**: `/etc/letsencrypt/...` is the most common cert path on
+  production hosts and is rejected. Workarounds: (a) inline the PEM via
+  `certificates[].certificate` / `key` (string arrays), or (b) place / symlink
+  the files under `/usr/local/share/xray/` so they're inside the allowed
+  root. Daemon-side `systemd ProtectSystem=strict` means writes from inside
+  the daemon's namespace stay limited; the operator owns staging.
+- **Installer's own etc dir**: `/usr/local/etc/xray/` (where the XTLS
+  installer puts its sample configs) is also outside the allowed root.
+  This is deliberate — the daemon owns its config registry; the installer's
+  files are reference material only.
+
+Path-bearing files must EXIST at `Configs.Add` time (the daemon resolves
+symlinks and rejects missing targets). Plan 4 may relax this for lazy-load
+cases; for v1 the admin pre-stages.
 
 ## Conflicts with the official `xray.service`
 

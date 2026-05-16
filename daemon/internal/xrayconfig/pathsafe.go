@@ -15,8 +15,14 @@ import (
 // validatePathValue, even if it doesn't "look" like a path (rev 3 fix for
 // the bypassable rev-2 heuristic).
 //
-// Audited against xray-core source as of v25.x. Future xray bumps must
-// re-audit and update this list — see docs/xray-core-linux-sources.md.
+// This list intentionally covers only the common cases. Keys NOT in this set
+// (e.g. socketPath, geoFile, domainList, dnsConfigFile) still get caught by
+// the defense-in-depth looksLikePath scan inside walk() — but only when the
+// value visibly contains '/' or other path markers. A future xray-core bump
+// that introduces a path-bearing key whose values are bare basenames could
+// slip through; the v1 trade-off is acceptable because the daemon runs with
+// systemd ProtectHome/ProtectSystem so even a slipped path can't escape.
+// See docs/xray-core-linux-sources.md for the xray-core source-of-truth.
 var pathBearingKeys = map[string]struct{}{
 	"certificateFile":   {},
 	"keyFile":           {},

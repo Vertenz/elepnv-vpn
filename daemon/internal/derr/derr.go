@@ -49,6 +49,11 @@ func (e *Error) Is(target error) bool {
 
 // With returns a copy of e with the given cause attached. The original
 // sentinel pointer is preserved as the chain's tail via Cause wrapping.
+//
+// The struct-copy keeps the original `detail` map reference. WithDetail is
+// the only mutator that defensively clones; callers MUST treat e.detail as
+// immutable after construction (which the public API enforces — there is
+// no way to mutate a non-nil detail through the exported surface).
 func (e *Error) With(cause error) *Error {
 	cp := *e
 	cp.Cause = cause
@@ -57,6 +62,8 @@ func (e *Error) With(cause error) *Error {
 
 // WithMessage returns a copy of e with a per-call message override. The Symbol
 // stays stable; the message can carry context like the offending JSON pointer.
+//
+// Like With, this shallow-copies. See With's note on detail immutability.
 func (e *Error) WithMessage(msg string) *Error {
 	cp := *e
 	cp.Message = msg
@@ -65,7 +72,11 @@ func (e *Error) WithMessage(msg string) *Error {
 
 // WithDetail returns a copy of e with the given structured detail attached.
 // The detail surfaces in JSON()'s error.data.detail object.
-// The detail map is shallow-copied; callers retain ownership of their copy.
+//
+// Defensively shallow-copies the input map so the caller can mutate their
+// copy without affecting the returned *Error. This is asymmetric with With
+// and WithMessage — those reuse the existing detail by reference, which is
+// safe because callers can't mutate e.detail through the exported API.
 func (e *Error) WithDetail(d Detail) *Error {
 	cp := *e
 	if d != nil {

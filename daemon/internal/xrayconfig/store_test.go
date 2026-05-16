@@ -117,7 +117,6 @@ func TestAddIsNonIdempotent(t *testing.T) {
 func TestListReturnsAllStoredConfigs(t *testing.T) {
 	store, _ := newStore(t, "exit 0\n")
 	id1, _ := store.Add(context.Background(), []byte(validCfg))
-	time.Sleep(2 * time.Millisecond) // ULIDs encode time; ensure ordering
 	id2, _ := store.Add(context.Background(), []byte(validCfg))
 
 	infos, err := store.List()
