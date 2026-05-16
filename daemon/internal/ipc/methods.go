@@ -3,8 +3,10 @@ package ipc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"elepn/daemon/internal/derr"
+	"elepn/daemon/internal/health"
 	"elepn/daemon/internal/platform"
 	"elepn/daemon/internal/state"
 	"elepn/daemon/internal/version"
@@ -318,10 +320,10 @@ func (d *dispatch) handleHealthProbe(ctx context.Context, _ json.RawMessage) (an
 	}
 	s, err := d.health.Probe(ctx)
 	if err != nil {
-		// The only documented error path is "disabled". Map any non-nil error
-		// to ErrHealthDisabled — if future Probe() paths add transient failures,
-		// this mapping will need to distinguish them.
-		return nil, derr.ErrHealthDisabled
+		if errors.Is(err, health.ErrHealthDisabled()) {
+			return nil, derr.ErrHealthDisabled
+		}
+		return nil, derr.ErrInternal.With(err)
 	}
 	return s, nil
 }
