@@ -243,12 +243,14 @@ func replyShuttingDown(cmd command) {
 		default:
 		}
 	case cmdShutdown:
+		// shutdownOnce on the caller side guarantees at most one
+		// cmdShutdown is ever sent. handle() consumes it serially before
+		// drainOnShutdown runs, so any cmdShutdown we see here is one
+		// that was not yet processed — c.done is therefore guaranteed
+		// not yet closed. A panic from double-close would indicate a
+		// real ownership bug, so we let it surface.
 		if c.done != nil {
-			// Idempotent: may already be closed if handleShutdown ran first.
-			func() {
-				defer func() { recover() }() //nolint:errcheck
-				close(c.done)
-			}()
+			close(c.done)
 		}
 	}
 }
