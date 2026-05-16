@@ -96,7 +96,7 @@ func run() int {
 		log.Warn("xray not found; Configs.Add will return internal_error until xray is installed")
 	}
 
-	srv := ipc.NewServer(sockPath, xrayInfo, store, log)
+	srv := ipc.NewServer(sockPath, xrayInfo, store, nil /* TODO Task 14: wire Machine */, log)
 	if err := srv.Listen(appCtx); err != nil {
 		log.Error("ipc listen failed", "err", err, "sock", sockPath)
 		return exitUnrecoverable
