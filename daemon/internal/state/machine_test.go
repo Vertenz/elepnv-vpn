@@ -124,16 +124,18 @@ func TestWaitBlocksUntilDone(t *testing.T) {
 	}
 }
 
-// TestChildExitCCNilledAfterHandling verifies the actor doesn't spin on
-// a closed childExitCC after processing it once. We inject a closed channel
-// directly and confirm the actor continues processing subsequent commands.
+// TestChildExitCCNilledAfterHandling verifies the actor doesn't spin on a
+// closed childExitCC: after it fires once, m.childExitCC is nilled so the
+// select case is disabled, and the actor remains responsive to subsequent
+// commands.
 func TestChildExitCCNilledAfterHandling(t *testing.T) {
 	m := newTestMachine(t)
 
+	// Subscribe BEFORE Start so we don't miss the handleChildExit broadcast.
+	ch, unsub := m.Subscribe()
+	defer unsub()
+
 	// Inject a pre-closed channel simulating an immediate child exit.
-	// m.child is nil; handleChildExit is a stub that ignores supervisor.Exit,
-	// so Result() returning (Exit{}, false) is fine — the nil childExitCC
-	// guard in run() is what we're testing.
 	exitDone := make(chan struct{})
 	close(exitDone)
 	m.childExitCC = exitDone
@@ -141,15 +143,26 @@ func TestChildExitCCNilledAfterHandling(t *testing.T) {
 	m.Start()
 	t.Cleanup(func() { m.cancel(); <-m.doneCh })
 
-	// After the childExit fires, the actor should still respond to GetStatus.
+	// Wait deterministically for handleChildExit to have run.
+	select {
+	case ev := <-ch:
+		if ev.State != StateError {
+			t.Fatalf("first broadcast State = %q, want Error", ev.State)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("handleChildExit did not broadcast within 1s — actor may be stuck")
+	}
+
+	// Now GetStatus — actor must still be responsive, proving the closed
+	// channel was nilled (otherwise it would still win select and starve cmds).
 	reply := make(chan Status, 1)
 	if !m.postCmd(cmdGetStatus{reply: reply}) {
 		t.Fatal("postCmd returned false")
 	}
 	select {
 	case s := <-reply:
-		if s.Conn.State != StateDisconnected {
-			t.Fatalf("State = %q, want Disconnected", s.Conn.State)
+		if s.Conn.State != StateError {
+			t.Fatalf("State = %q, want Error", s.Conn.State)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("GetStatus reply not received within 1s (actor may be spinning)")
