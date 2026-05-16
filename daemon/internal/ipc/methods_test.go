@@ -265,7 +265,7 @@ func (f *fakeMachine) Subscribe() (<-chan state.ConnStatus, func()) {
 
 func TestTunnelConnectAcceptedReturnsValidating(t *testing.T) {
 	fm := &fakeMachine{}
-	d := newDispatch(platform.XrayInfo{}, nil, &recorderBroadcaster{}, fm, nil)
+	d := newDispatch(platform.XrayInfo{Found: true}, nil, &recorderBroadcaster{}, fm, nil)
 	params, _ := json.Marshal(map[string]any{"id": "01HX7N9KQ8R3JCBVB6Z3K9V4FK"})
 	res, derrVal := d.handle(context.Background(), Request{Method: "Tunnel.Connect", Params: params})
 	if derrVal != nil {
@@ -282,7 +282,7 @@ func TestTunnelConnectAcceptedReturnsValidating(t *testing.T) {
 
 func TestTunnelConnectSurfacesAlreadyConnected(t *testing.T) {
 	fm := &fakeMachine{connectErr: derr.ErrAlreadyConnected}
-	d := newDispatch(platform.XrayInfo{}, nil, &recorderBroadcaster{}, fm, nil)
+	d := newDispatch(platform.XrayInfo{Found: true}, nil, &recorderBroadcaster{}, fm, nil)
 	params, _ := json.Marshal(map[string]any{"id": "01HX7N9KQ8R3JCBVB6Z3K9V4FK"})
 	_, derrVal := d.handle(context.Background(), Request{Method: "Tunnel.Connect", Params: params})
 	if !errors.Is(derrVal, derr.ErrAlreadyConnected) {
@@ -292,7 +292,7 @@ func TestTunnelConnectSurfacesAlreadyConnected(t *testing.T) {
 
 func TestTunnelDisconnectAcceptedReturnsDisconnecting(t *testing.T) {
 	fm := &fakeMachine{}
-	d := newDispatch(platform.XrayInfo{}, nil, &recorderBroadcaster{}, fm, nil)
+	d := newDispatch(platform.XrayInfo{Found: true}, nil, &recorderBroadcaster{}, fm, nil)
 	res, derrVal := d.handle(context.Background(), Request{Method: "Tunnel.Disconnect", Params: nil})
 	if derrVal != nil {
 		t.Fatalf("err = %v", derrVal)
@@ -305,7 +305,7 @@ func TestTunnelDisconnectAcceptedReturnsDisconnecting(t *testing.T) {
 
 func TestTunnelDisconnectSurfacesNotConnected(t *testing.T) {
 	fm := &fakeMachine{disconnectErr: derr.ErrNotConnected}
-	d := newDispatch(platform.XrayInfo{}, nil, &recorderBroadcaster{}, fm, nil)
+	d := newDispatch(platform.XrayInfo{Found: true}, nil, &recorderBroadcaster{}, fm, nil)
 	_, derrVal := d.handle(context.Background(), Request{Method: "Tunnel.Disconnect", Params: nil})
 	if !errors.Is(derrVal, derr.ErrNotConnected) {
 		t.Fatalf("err = %v, want ErrNotConnected", derrVal)
@@ -316,7 +316,7 @@ func TestTunnelGetStatusReturnsMachineSnapshot(t *testing.T) {
 	fm := &fakeMachine{
 		status: state.Status{Conn: state.ConnStatus{State: state.StateConnected, ConfigID: "01HX7N9KQ8R3JCBVB6Z3K9V4FK"}},
 	}
-	d := newDispatch(platform.XrayInfo{}, nil, &recorderBroadcaster{}, fm, nil)
+	d := newDispatch(platform.XrayInfo{Found: true}, nil, &recorderBroadcaster{}, fm, nil)
 	res, derrVal := d.handle(context.Background(), Request{Method: "Tunnel.GetStatus", Params: nil})
 	if derrVal != nil {
 		t.Fatalf("err = %v", derrVal)
@@ -343,9 +343,29 @@ func TestConfigsRemoveRejectsActiveConfig(t *testing.T) {
 	}
 }
 
+func TestTunnelConnectReturnsXrayNotFoundWhenXrayMissing(t *testing.T) {
+	fm := &fakeMachine{}
+	// xrayInfo.Found is false (zero value)
+	d := newDispatch(platform.XrayInfo{Found: false}, nil, &recorderBroadcaster{}, fm, nil)
+	params, _ := json.Marshal(map[string]any{"id": "01HX7N9KQ8R3JCBVB6Z3K9V4FK"})
+	_, derrVal := d.handle(context.Background(), Request{Method: "Tunnel.Connect", Params: params})
+	if !errors.Is(derrVal, derr.ErrXrayNotFound) {
+		t.Fatalf("err = %v, want ErrXrayNotFound", derrVal)
+	}
+}
+
+func TestConfigsAddReturnsXrayNotFoundWhenXrayMissing(t *testing.T) {
+	d := newDispatch(platform.XrayInfo{Found: false}, nil, &recorderBroadcaster{}, nil, nil)
+	params, _ := json.Marshal(map[string]any{"json": `{"inbounds":[]}`})
+	_, derrVal := d.handle(context.Background(), Request{Method: "Configs.Add", Params: params})
+	if !errors.Is(derrVal, derr.ErrXrayNotFound) {
+		t.Fatalf("err = %v, want ErrXrayNotFound", derrVal)
+	}
+}
+
 func TestTunnelConnectHonorsRateLimit(t *testing.T) {
 	fm := &fakeMachine{}
-	d := newDispatch(platform.XrayInfo{}, nil, &recorderBroadcaster{}, fm, nil)
+	d := newDispatch(platform.XrayInfo{Found: true}, nil, &recorderBroadcaster{}, fm, nil)
 	bucket := newTokenBucket(2, time.Minute)
 	ctx := context.WithValue(context.Background(), ctxKeyConnRate{}, bucket)
 	params, _ := json.Marshal(map[string]any{"id": "01HX7N9KQ8R3JCBVB6Z3K9V4FK"})

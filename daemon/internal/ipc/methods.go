@@ -113,6 +113,9 @@ type addResult struct {
 }
 
 func (d *dispatch) handleConfigsAdd(ctx context.Context, raw json.RawMessage) (any, *derr.Error) {
+	if !d.xrayInfo.Found {
+		return nil, derr.ErrXrayNotFound
+	}
 	if d.configs == nil {
 		return nil, derr.ErrInternal.WithMessage("config store not wired")
 	}
@@ -202,6 +205,9 @@ type validateParams struct {
 }
 
 func (d *dispatch) handleConfigsValidate(ctx context.Context, raw json.RawMessage) (any, *derr.Error) {
+	if !d.xrayInfo.Found {
+		return nil, derr.ErrXrayNotFound
+	}
 	if d.configs == nil {
 		return nil, derr.ErrInternal.WithMessage("config store not wired")
 	}
@@ -246,6 +252,9 @@ func (d *dispatch) handleTunnelConnect(ctx context.Context, raw json.RawMessage)
 			return nil, derr.ErrRateLimited
 		}
 	}
+	if !d.xrayInfo.Found {
+		return nil, derr.ErrXrayNotFound
+	}
 	if d.machine == nil {
 		return nil, derr.ErrInternal.WithMessage("tunnel machine not wired")
 	}
@@ -267,6 +276,9 @@ func (d *dispatch) handleTunnelConnect(ctx context.Context, raw json.RawMessage)
 }
 
 func (d *dispatch) handleTunnelDisconnect(ctx context.Context, _ json.RawMessage) (any, *derr.Error) {
+	if !d.xrayInfo.Found {
+		return nil, derr.ErrXrayNotFound
+	}
 	if d.machine == nil {
 		return nil, derr.ErrInternal.WithMessage("tunnel machine not wired")
 	}
@@ -277,6 +289,9 @@ func (d *dispatch) handleTunnelDisconnect(ctx context.Context, _ json.RawMessage
 }
 
 func (d *dispatch) handleTunnelGetStatus(ctx context.Context, _ json.RawMessage) (any, *derr.Error) {
+	if !d.xrayInfo.Found {
+		return nil, derr.ErrXrayNotFound
+	}
 	if d.machine == nil {
 		return nil, derr.ErrInternal.WithMessage("tunnel machine not wired")
 	}
