@@ -53,6 +53,33 @@ func TestUnknownMethodReturnsMethodNotFound(t *testing.T) {
 	}
 }
 
+func TestAsDerrOrInternalPassesThroughTypedErrors(t *testing.T) {
+	in := derr.ErrConfigUnknown.With(errors.New("inner"))
+	got := asDerrOrInternal(in)
+	if !errors.Is(got, derr.ErrConfigUnknown) {
+		t.Fatalf("typed error was rewrapped: %v", got)
+	}
+}
+
+func TestAsDerrOrInternalWrapsPlainErrors(t *testing.T) {
+	// Regression for the silent-success bug: a plain fmt.Errorf must become
+	// ErrInternal, never nil — otherwise the dispatcher would send
+	// {"result": null} for what was really an I/O failure.
+	got := asDerrOrInternal(errors.New("disk full"))
+	if got == nil {
+		t.Fatal("plain error must NOT yield nil (would cause silent-success response)")
+	}
+	if !errors.Is(got, derr.ErrInternal) {
+		t.Fatalf("plain error should wrap as ErrInternal, got %v", got)
+	}
+}
+
+func TestAsDerrOrInternalNilStaysNil(t *testing.T) {
+	if got := asDerrOrInternal(nil); got != nil {
+		t.Fatalf("nil should pass through, got %v", got)
+	}
+}
+
 // --- Plan 2: Configs.* tests ---
 
 const validCfg = `{

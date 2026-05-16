@@ -23,6 +23,18 @@ type configRoot struct {
 	Inbounds []inboundSpec `json:"inbounds"`
 }
 
+// ValidateExpectedSocksAddr parses the daemon-configured expectedSocksAddr
+// (env XRAYD_EXPECTED_SOCKS_ADDR, default "127.0.0.1:10808") and returns
+// an error if it can't be split into host:port. main.go calls this at
+// startup so an operator misconfiguration is visible immediately rather
+// than turning every Configs.Add into a silently-bypassed inbound check.
+func ValidateExpectedSocksAddr(addr string) error {
+	if _, _, err := net.SplitHostPort(addr); err != nil {
+		return fmt.Errorf("XRAYD_EXPECTED_SOCKS_ADDR %q: %w", addr, err)
+	}
+	return nil
+}
+
 // checkInboundSafety enforces §6.7 (rev 4):
 //
 //  1. Exactly ONE inbound.
@@ -44,7 +56,13 @@ func checkInboundSafety(jsonBytes []byte, expectedSocksAddr string) error {
 	}
 	expectedHost, expectedPort, err := net.SplitHostPort(expectedSocksAddr)
 	if err != nil {
-		return fmt.Errorf("invalid expectedSocksAddr %q: %w", expectedSocksAddr, err)
+		// Defense in depth: this is a daemon-configuration error (bad env
+		// var). main.go should have caught it at startup via
+		// ValidateExpectedSocksAddr — if we reach here a misconfigured
+		// daemon would silently bypass inbound safety. Surface as a typed
+		// internal error so the dispatcher cannot swallow it.
+		return derr.ErrInternal.WithMessage(
+			fmt.Sprintf("invalid expectedSocksAddr %q: %v", expectedSocksAddr, err))
 	}
 	ib := root.Inbounds[0]
 	ptr := "/inbounds/0"

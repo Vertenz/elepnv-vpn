@@ -48,6 +48,23 @@ func (d *dispatch) handle(ctx context.Context, req Request) (any, *derr.Error) {
 	return h(ctx, req.Params)
 }
 
+// asDerrOrInternal turns a non-nil error into a *derr.Error. If err already
+// wraps one (via With / WithMessage / WithDetail), that typed error is
+// returned unchanged. Otherwise the plain error is wrapped in ErrInternal
+// so the JSON-RPC response carries a real error code instead of being
+// silently promoted to {result: null} — which is what bare derr.AsDerr(err)
+// does when err is a plain fmt.Errorf (e.g. an I/O failure from os.Remove).
+// Returns nil iff err == nil.
+func asDerrOrInternal(err error) *derr.Error {
+	if err == nil {
+		return nil
+	}
+	if de := derr.AsDerr(err); de != nil {
+		return de
+	}
+	return derr.ErrInternal.With(err)
+}
+
 // --- Daemon.Ping / Daemon.GetVersion (unchanged from Plan 1) ---
 
 type pingResult struct {
@@ -98,7 +115,7 @@ func (d *dispatch) handleConfigsAdd(ctx context.Context, raw json.RawMessage) (a
 	}
 	id, err := d.configs.Add(ctx, []byte(p.JSON))
 	if err != nil {
-		return nil, derr.AsDerr(err)
+		return nil, asDerrOrInternal(err)
 	}
 	if d.bcast != nil {
 		d.bcast.Broadcast(Event{
@@ -150,12 +167,12 @@ func (d *dispatch) handleConfigsRemove(_ context.Context, raw json.RawMessage) (
 	if err != nil {
 		// ParseULID already wraps as ErrConfigUnknown — treat malformed
 		// client id the same as missing id.
-		return nil, derr.AsDerr(err)
+		return nil, asDerrOrInternal(err)
 	}
 	// TODO(plan-3): consult Machine.IsActive(id) and return ErrConfigInUse
 	// before calling Store.Remove.
 	if err := d.configs.Remove(id); err != nil {
-		return nil, derr.AsDerr(err)
+		return nil, asDerrOrInternal(err)
 	}
 	if d.bcast != nil {
 		d.bcast.Broadcast(Event{
@@ -183,11 +200,11 @@ func (d *dispatch) handleConfigsValidate(ctx context.Context, raw json.RawMessag
 	}
 	id, err := xrayconfig.ParseULID(p.ID)
 	if err != nil {
-		return nil, derr.AsDerr(err)
+		return nil, asDerrOrInternal(err)
 	}
 	res, err := d.configs.Validate(ctx, id)
 	if err != nil {
-		return nil, derr.AsDerr(err)
+		return nil, asDerrOrInternal(err)
 	}
 	return res, nil
 }

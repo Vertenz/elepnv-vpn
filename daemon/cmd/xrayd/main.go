@@ -54,6 +54,15 @@ func run() int {
 	if expectedSocksAddr == "" {
 		expectedSocksAddr = "127.0.0.1:10808"
 	}
+	// Fail fast on misconfigured env so the operator sees the problem at
+	// startup; otherwise every Configs.Add would silently surface a
+	// less-actionable internal_error response.
+	if err := xrayconfig.ValidateExpectedSocksAddr(expectedSocksAddr); err != nil {
+		log.Error("XRAYD_EXPECTED_SOCKS_ADDR invalid",
+			"err", err,
+			"hint", `use host:port form, e.g. "127.0.0.1:10808" or "[::1]:10808"`)
+		return exitUnrecoverable
+	}
 
 	// appCtx is signal-driven. It tells us when to START shutting down.
 	// It is NOT the actor's context; in Plan 3, the Machine will own its own
