@@ -24,7 +24,7 @@ func doConnect(
 	cu := newCleanupStack()
 	defer func() {
 		if result.err != nil {
-			cu.run(context.Background())
+			cu.run()
 			result.cleanup = nil
 		} else {
 			result.cleanup = cu

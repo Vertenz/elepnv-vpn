@@ -279,7 +279,7 @@ func TestKillDashNineRecoveryReapsOrphans(t *testing.T) {
 		if err := syscall.Kill(xrayPid, 0); errors.Is(err, syscall.ESRCH) {
 			// Orphan reaped — confirm state is Disconnected.
 			conn2, r2 := dialDaemon(t, sockPath)
-			defer conn2.Close()
+			t.Cleanup(func() { conn2.Close() })
 			status2 := rpcCall(t, r2, conn2, "1", "Tunnel.GetStatus", nil)
 			if res, ok := status2["result"].(map[string]any); ok {
 				if c, ok := res["conn"].(map[string]any); ok && c["state"] == "Disconnected" {

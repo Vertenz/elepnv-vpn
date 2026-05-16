@@ -188,6 +188,10 @@ func (m *Machine) drainOnShutdown() {
 }
 
 func replyShuttingDown(cmd command) {
+	// Commands not listed below (cmdConnectProgress, cmdConnectDone,
+	// cmdDisconnectDone, cmdAutoRevert, cmdChildExit) carry no reply channel
+	// and are safe to discard during shutdown — the worker goroutines that
+	// would have processed their results have already been ctx-cancelled.
 	switch c := cmd.(type) {
 	case cmdConnect:
 		c.reply <- derr.ErrDaemonShuttingDown

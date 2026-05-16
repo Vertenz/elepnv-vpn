@@ -1,7 +1,6 @@
 package state
 
 import (
-	"context"
 	"log/slog"
 	"sync"
 )
@@ -30,11 +29,9 @@ func (s *cleanupStack) push(name string, fn func()) {
 	s.entries = append(s.entries, cleanupEntry{name: name, fn: fn})
 }
 
-// run executes the entries in LIFO order. ctx is forwarded for entries
-// that want to honor a deadline (v1 entries are wall-clock-bound so ctx is
-// reserved). Panics in one entry are logged and recovered so subsequent
-// entries still run.
-func (s *cleanupStack) run(ctx context.Context) {
+// run executes the entries in LIFO order. Panics in one entry are logged
+// and recovered so subsequent entries still run.
+func (s *cleanupStack) run() {
 	s.mu.Lock()
 	if s.ran {
 		s.mu.Unlock()
@@ -53,7 +50,6 @@ func (s *cleanupStack) run(ctx context.Context) {
 					slog.Default().Error("cleanup panic", "name", e.name, "panic", r)
 				}
 			}()
-			_ = ctx
 			e.fn()
 		}()
 	}

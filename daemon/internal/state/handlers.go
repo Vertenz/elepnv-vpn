@@ -53,7 +53,7 @@ func (m *Machine) handleConnectProgress(c cmdConnectProgress) {
 func (m *Machine) handleConnectDone(c cmdConnectDone) {
 	if c.gen != m.opGen {
 		if c.result.cleanup != nil {
-			c.result.cleanup.run(context.Background())
+			c.result.cleanup.run()
 		}
 		if m.state.State == StateDisconnecting {
 			m.child = nil
@@ -137,7 +137,7 @@ func (m *Machine) handleDisconnect(c cmdDisconnect) {
 			Since:    time.Now(),
 		})
 		go func() {
-			armed.run(context.Background())
+			armed.run()
 			_ = m.postCmd(cmdDisconnectDone{gen: gen})
 		}()
 		return
@@ -166,7 +166,7 @@ func (m *Machine) handleChildExit(exit supervisor.Exit) {
 	armed := m.armed
 	m.armed = nil
 	if armed != nil {
-		armed.run(context.Background())
+		armed.run()
 	}
 	m.activeID = xrayconfig.ULID{}
 
@@ -199,7 +199,7 @@ func (m *Machine) handleShutdown(c cmdShutdown) {
 	// A normal Disconnect would have disarmed m.armed; on shutdown we may still
 	// hold the doConnect Stop-xray entry and must run it to avoid leaking the child.
 	if m.armed != nil {
-		m.armed.run(context.Background())
+		m.armed.run()
 		m.armed = nil
 	}
 	m.child = nil

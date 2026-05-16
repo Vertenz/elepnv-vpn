@@ -23,7 +23,10 @@ func TestTokenBucketDrainAndRefill(t *testing.T) {
 
 func TestTokenBucketCapacityCap(t *testing.T) {
 	b := newTokenBucket(2, time.Second)
-	time.Sleep(2 * time.Second) // would refill many tokens but capped at 2
+	// Wait long enough that an uncapped bucket would refill > 2 tokens
+	// (3 refill periods at capacity 2 / 1s = 0.6s). After this the bucket
+	// must still cap at 2.
+	time.Sleep(600 * time.Millisecond)
 	for i := 0; i < 2; i++ {
 		if !b.take() {
 			t.Fatalf("take %d: expected ok at full capacity", i)
