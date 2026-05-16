@@ -177,15 +177,14 @@ func killGraceful(ctx context.Context, target int, grace time.Duration) error {
 	}
 	deadline := time.Now().Add(grace)
 	for time.Now().Before(deadline) {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
 		if errors.Is(syscall.Kill(probePid, 0), syscall.ESRCH) {
 			return nil
 		}
-		time.Sleep(100 * time.Millisecond)
+		select {
+		case <-time.After(100 * time.Millisecond):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 	if err := syscall.Kill(target, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
 		return err
