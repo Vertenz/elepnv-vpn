@@ -53,6 +53,30 @@ socat - UNIX-CONNECT:/tmp/xrayd-run/control.sock
 |---|---|---|
 | `XRAYD_SOCK` | `/run/xrayd/control.sock` | Control socket path |
 | `XRAYD_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error` |
+| `XRAYD_CONFIGS_DIR` | `/var/lib/xrayd/configs` | Where `Configs.Add` stores `<ulid>.json` files |
+| `XRAYD_EXPECTED_SOCKS_ADDR` | `127.0.0.1:10808` | The local SOCKS5 endpoint configs MUST declare (§6.7) |
+
+## Adding a config
+
+Plan 2 ships the `Configs.*` RPC family. The submitted config must declare
+exactly one SOCKS5 inbound on the expected address (default
+`127.0.0.1:10808`), with `auth: "noauth"` and no public bind. Cert/key/log
+paths must live under `/usr/local/share/xray/`.
+
+```bash
+socat - UNIX-CONNECT:/run/xrayd/control.sock
+{"jsonrpc":"2.0","id":"1","method":"Configs.Add","params":{"json":"<exact xray JSON as a single string>"}}
+# → {"jsonrpc":"2.0","id":"1","result":{"id":"01HXAB..."}}
+
+{"jsonrpc":"2.0","id":"2","method":"Configs.List"}
+# → {"jsonrpc":"2.0","id":"2","result":{"configs":[{"id":"01HXAB...","sha256":"...","addedAt":"..."}]}}
+
+{"jsonrpc":"2.0","id":"3","method":"Configs.Remove","params":{"id":"01HXAB..."}}
+# → {"jsonrpc":"2.0","id":"3","result":{"ok":true}}
+```
+
+Subscribers receive `{"jsonrpc":"2.0","method":"Configs.Changed","params":{"added":["..."]}}`
+after every successful Add and `{"removed":["..."]}` after every Remove.
 
 ## Conflicts with the official `xray.service`
 
@@ -111,7 +135,7 @@ go test ./...
 
 | Plan | What it adds |
 |---|---|
-| 1 (this) | Daemon binary, IPC server, `Daemon.Ping`, `Daemon.GetVersion` |
-| 2 | `Configs.*` registry under `/var/lib/xrayd/configs/` |
+| 1 | Daemon binary, IPC server, `Daemon.Ping`, `Daemon.GetVersion` |
+| 2 (this) | `Configs.*` registry under `/var/lib/xrayd/configs/` with path-safety + inbound-safety validation; `Configs.Changed` broadcast |
 | 3 | Supervisor + state machine; `Tunnel.Connect`/`Disconnect`/`GetStatus` |
 | 4 | Health probe; quotas; done-criteria tests |
