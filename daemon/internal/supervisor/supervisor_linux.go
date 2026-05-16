@@ -19,7 +19,14 @@ import (
 // Supervisor is a stateless factory that spawns and reaps xray-core children.
 // It is the only package permitted to import os/exec and call syscall.Kill on
 // the long-running xray child (spec §4).
-type Supervisor struct{}
+//
+// XrayPath may be set to the absolute path discovered at daemon startup so
+// Start doesn't re-resolve PATH on every connect.  If empty, Start falls back
+// to exec.LookPath("xray") for compatibility with tests that construct
+// Supervisor{} without a path.
+type Supervisor struct {
+	XrayPath string // optional cached path from platform.Discover
+}
 
 // Child is an opaque handle to a running xray-core process. State machine and
 // other callers receive *Child and interact only via ExitC / Result / Stop.
@@ -58,9 +65,14 @@ func (c *Child) Result() (Exit, bool) {
 // Start spawns xray in its own process group. The caller takes ownership of
 // the returned Child handle. ExitC closes exactly once when xray exits.
 func (s *Supervisor) Start(ctx context.Context, configPath string) (*Child, error) {
-	xrayPath, err := exec.LookPath("xray")
-	if err != nil {
-		return nil, derr.ErrXrayNotFound // P1-5: systemd unit sets PATH
+	xrayPath := s.XrayPath
+	if xrayPath == "" {
+		// Fallback for tests that construct Supervisor{} without a path.
+		var err error
+		xrayPath, err = exec.LookPath("xray")
+		if err != nil {
+			return nil, derr.ErrXrayNotFound // P1-5: systemd unit sets PATH
+		}
 	}
 
 	// Use exec.Command (NOT CommandContext). Tying ctx to Go's default

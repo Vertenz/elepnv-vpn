@@ -172,6 +172,10 @@ func (m *Machine) handleChildExit(exit supervisor.Exit) {
 	armed := m.armed
 	m.armed = nil
 	if armed != nil {
+		// v1: armed.run() blocks the actor for ~ms (Stop sees ExitC already
+		// closed, returns near-immediately).  v2 routing cleanup entries that
+		// may block on netlink syscalls will require moving this into a
+		// goroutine that posts a sentinel command back when done.
 		armed.run()
 	}
 	m.activeID = xrayconfig.ULID{}

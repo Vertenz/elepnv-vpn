@@ -143,7 +143,7 @@ func run() int {
 	var tunnelMachine ipc.TunnelMachine
 	var machine *state.Machine
 	if xrayInfo.Found && store != nil {
-		sup := &supervisor.Supervisor{}
+		sup := &supervisor.Supervisor{XrayPath: xrayInfo.Path}
 		cfg := state.Config{
 			SocksAddr:       expectedSocksAddr,
 			ConnectDeadline: 25 * time.Second,

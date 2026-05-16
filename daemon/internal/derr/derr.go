@@ -15,6 +15,17 @@ import (
 // Detail is an optional structured payload merged into the JSON-RPC
 // error.data object alongside `symbol`. Constructors like NewPathUnsafe
 // populate it so renderers can highlight the offending JSON pointer.
+//
+// Per-symbol detail shapes (renderer may rely on these keys):
+//
+//	path_unsafe (-32015):
+//	  {"pointer": "<JSON pointer>", "value": "<offending string>"}
+//	inbound_unsafe (-32020):
+//	  {"pointer": "<JSON pointer>", "reason": "<human-readable>"}
+//	config_invalid (-32004):
+//	  {"summary": "<short>", "stderr": "<xray -test tail>"}
+//
+// Other symbols carry no detail in v1.
 type Detail map[string]any
 
 // Error is the daemon's IPC-visible error value. It implements both the Go

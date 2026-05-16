@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"log/slog"
 
 	"elepn/daemon/internal/derr"
 	"elepn/daemon/internal/health"
@@ -27,9 +29,10 @@ type dispatch struct {
 	bcast    Broadcaster       // nil-permitted in Plan-1-only tests
 	machine  TunnelMachine     // nil-permitted in Plan-1/2-only tests
 	health   HealthMachine     // nil-permitted in tests that don't exercise Health.*
+	log      *slog.Logger
 }
 
-func newDispatch(xrayInfo platform.XrayInfo, store *xrayconfig.Store, bcast Broadcaster, machine TunnelMachine, hm HealthMachine) *dispatch {
+func newDispatch(xrayInfo platform.XrayInfo, store *xrayconfig.Store, bcast Broadcaster, machine TunnelMachine, hm HealthMachine, log ...*slog.Logger) *dispatch {
 	d := &dispatch{
 		methods:  make(map[string]MethodHandler),
 		xrayInfo: xrayInfo,
@@ -37,6 +40,11 @@ func newDispatch(xrayInfo platform.XrayInfo, store *xrayconfig.Store, bcast Broa
 		bcast:    bcast,
 		machine:  machine,
 		health:   hm,
+	}
+	if len(log) > 0 && log[0] != nil {
+		d.log = log[0]
+	} else {
+		d.log = slog.New(slog.NewJSONHandler(io.Discard, nil))
 	}
 	d.methods["Daemon.Ping"] = d.handlePing
 	d.methods["Daemon.GetVersion"] = d.handleGetVersion
@@ -58,7 +66,13 @@ func (d *dispatch) handle(ctx context.Context, req Request) (any, *derr.Error) {
 	if !ok {
 		return nil, derr.ErrMethodNotFound.WithMessage(req.Method)
 	}
-	return h(ctx, req.Params)
+	result, derrErr := h(ctx, req.Params)
+	if derrErr != nil && derrErr.Code == derr.ErrInternal.Code && derrErr.Cause != nil {
+		// Log internal-error causes so operators can triage; the cause is not
+		// serialized to the wire per spec §9.3.
+		d.log.Error("internal error from handler", "method", req.Method, "cause", derrErr.Cause)
+	}
+	return result, derrErr
 }
 
 // asDerrOrInternal turns a non-nil error into a *derr.Error. If err already

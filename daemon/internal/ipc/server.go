@@ -87,7 +87,7 @@ func NewServer(sockPath string, xrayInfo platform.XrayInfo, store *xrayconfig.St
 		baseCtx:    baseCtx,
 		cancelBase: cancel,
 	}
-	s.dispatch = newDispatch(xrayInfo, store, s, machine, hm)
+	s.dispatch = newDispatch(xrayInfo, store, s, machine, hm, log)
 	// onSlowClient: close the offending connection so the renderer reconnects
 	// and refetches state via Tunnel.GetStatus.
 	s.subs = newSubscribers(log, func(id uint64) { s.closeBySubscriberID(id) })
