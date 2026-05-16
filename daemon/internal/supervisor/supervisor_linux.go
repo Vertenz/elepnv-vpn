@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"os/exec"
 	"sync"
 	"syscall"
@@ -76,10 +77,28 @@ func (s *Supervisor) Start(ctx context.Context, configPath string) (*Child, erro
 	}
 
 	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
+
+	// Use os.Pipe() directly for stderr instead of cmd.StderrPipe().
+	// cmd.StderrPipe() registers the read end (pr) in cmd.parentIOPipes, so
+	// cmd.Wait() closes pr before our forwardLines goroutine can drain it —
+	// causing a race where the child's stderr is lost on fast exit.
+	// With os.Pipe() we assign only the write end to cmd.Stderr; cmd.Wait()
+	// closes pw (child side) when the process exits, delivering EOF to pr,
+	// while pr remains open until we explicitly close it after draining.
+	stderrR, stderrW, err := os.Pipe()
+	if err != nil {
+		return nil, fmt.Errorf("os.Pipe: %w", err)
+	}
+	cmd.Stderr = stderrW
+
 	if err := cmd.Start(); err != nil {
+		stderrR.Close()
+		stderrW.Close()
 		return nil, derr.WrapSpawn(err)
 	}
+	// Close the write end in the parent after Start so that when the child
+	// exits (and its copy of stderrW is closed), stderrR sees EOF.
+	stderrW.Close()
 
 	pgid, err := syscall.Getpgid(cmd.Process.Pid)
 	if err != nil {
@@ -95,11 +114,22 @@ func (s *Supervisor) Start(ctx context.Context, configPath string) (*Child, erro
 		exitDone: make(chan struct{}),
 	}
 	var sbuf ringBuf // 4 KiB cap, last bytes preserved
+	var stderrWG sync.WaitGroup
+	stderrWG.Add(1)
 
 	go forwardLines(stdout, slog.LevelInfo, false, "xray.stdout")
-	go forwardLines(io.TeeReader(stderr, &sbuf), slog.LevelWarn, true, "xray.stderr")
+	go func() {
+		defer stderrWG.Done()
+		defer stderrR.Close()
+		forwardLines(io.TeeReader(stderrR, &sbuf), slog.LevelWarn, true, "xray.stderr")
+	}()
 	go func() {
 		waitErr := cmd.Wait()
+		// cmd.Wait() closes the child's write end of the stderr pipe, causing
+		// EOF on stderrR. We must wait for the forwardLines goroutine to fully
+		// drain stderrR into sbuf before sampling sbuf; otherwise a fast-exiting
+		// child produces an empty Stderr.
+		stderrWG.Wait()
 		child.exitOnce.Do(func() {
 			child.exitVal = Exit{Err: waitErr, Stderr: sbuf.String()}
 			close(child.exitDone)
