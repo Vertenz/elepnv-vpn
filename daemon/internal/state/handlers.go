@@ -3,9 +3,11 @@ package state
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"elepn/daemon/internal/derr"
+	"elepn/daemon/internal/supervisor"
 	"elepn/daemon/internal/xrayconfig"
 )
 
@@ -84,5 +86,118 @@ func (m *Machine) handleConnectDone(c cmdConnectDone) {
 			XrayPid:  c.result.child.Pid,
 			Since:    time.Now(),
 		})
+	}
+}
+
+func (m *Machine) handleDisconnect(c cmdDisconnect) {
+	switch m.state.State {
+	case StateDisconnected:
+		c.reply <- derr.ErrNotConnected
+		return
+	case StateDisconnecting:
+		c.reply <- nil
+		return
+	case StateValidating, StateConnecting:
+		c.reply <- nil
+		m.opGen++
+		m.postState(ConnStatus{
+			State:    StateDisconnecting,
+			ConfigID: m.state.ConfigID,
+			Since:    time.Now(),
+		})
+		if m.cancelConnect != nil {
+			m.cancelConnect()
+			m.cancelConnect = nil
+		}
+		return
+	case StateConnected, StateError:
+		if m.armed == nil {
+			c.reply <- nil
+			m.postState(ConnStatus{State: StateDisconnected, Since: time.Now()})
+			return
+		}
+		c.reply <- nil
+		m.opGen++
+		gen := m.opGen
+		armed := m.armed
+		m.armed = nil
+		m.postState(ConnStatus{
+			State:    StateDisconnecting,
+			ConfigID: m.state.ConfigID,
+			Since:    time.Now(),
+		})
+		go func() {
+			armed.run(context.Background())
+			_ = m.postCmd(cmdDisconnectDone{gen: gen})
+		}()
+		return
+	}
+	c.reply <- derr.ErrInternal
+}
+
+func (m *Machine) handleDisconnectDone(c cmdDisconnectDone) {
+	if c.gen != m.opGen {
+		return
+	}
+	m.child = nil
+	m.childExitCC = nil
+	m.activeID = xrayconfig.ULID{}
+	m.postState(ConnStatus{State: StateDisconnected, Since: time.Now()})
+}
+
+func (m *Machine) handleChildExit(exit supervisor.Exit) {
+	m.child = nil
+	m.childExitCC = nil
+
+	if m.state.State == StateDisconnecting {
+		return
+	}
+
+	armed := m.armed
+	m.armed = nil
+	m.activeID = xrayconfig.ULID{}
+	if armed != nil {
+		armed.run(context.Background())
+	}
+
+	m.postState(ConnStatus{
+		State:   StateError,
+		Message: fmt.Sprintf("xray exited: %v (stderr: %s)", exit.Err, truncate(exit.Stderr, 200)),
+		Since:   time.Now(),
+	})
+	m.armAutoRevert(m.deps.cfg.AutoRevertDelay)
+}
+
+// truncate clips s to at most n bytes, appending an ellipsis on truncation.
+// Used by handleChildExit to bound the stderr included in state messages.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
+}
+
+func (m *Machine) handleShutdown(c cmdShutdown) {
+	// Cancel any in-flight connect worker; its cleanup runs inline via the
+	// worker's defer (doConnect catches ctx.Err and unwinds cu).
+	if m.cancelConnect != nil {
+		m.cancelConnect()
+		m.cancelConnect = nil
+	}
+	// Run armed cleanup (typically the Stop-xray entry from doConnect).
+	if m.armed != nil {
+		m.armed.run(context.Background())
+		m.armed = nil
+	}
+	m.child = nil
+	m.childExitCC = nil
+	m.activeID = xrayconfig.ULID{}
+	m.cancelAutoRevert()
+
+	if m.state.State != StateDisconnected {
+		m.postState(ConnStatus{State: StateDisconnected, Since: time.Now()})
+	}
+	if c.done != nil {
+		close(c.done)
 	}
 }

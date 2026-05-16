@@ -162,45 +162,6 @@ func (m *Machine) handleGetStatus(c cmdGetStatus) {
 }
 
 // ---------------------------------------------------------------------------
-// Stub handlers — Tasks 9/10 will replace these with real implementations.
-// ---------------------------------------------------------------------------
-
-func (m *Machine) handleDisconnect(c cmdDisconnect) {
-	c.reply <- nil // TODO Task 10
-}
-
-func (m *Machine) handleDisconnectDone(_ cmdDisconnectDone) {
-	// TODO Task 10
-}
-
-func (m *Machine) handleAutoRevert() {
-	// TODO Task 10
-}
-
-func (m *Machine) handleChildExit(_ supervisor.Exit) {
-	// TODO Task 10
-}
-
-func (m *Machine) handleShutdown(c cmdShutdown) {
-	if c.done != nil {
-		close(c.done)
-	}
-	// TODO Task 10: real shutdown sequence (stop child, run cleanup, etc.)
-}
-
-// ---------------------------------------------------------------------------
-// Auto-revert stubs — Task 10 fills these in.
-// ---------------------------------------------------------------------------
-
-func (m *Machine) armAutoRevert(_ time.Duration) {
-	// TODO Task 10
-}
-
-func (m *Machine) cancelAutoRevert() {
-	// TODO Task 10
-}
-
-// ---------------------------------------------------------------------------
 // drainOnShutdown — replies ShuttingDown to any commands queued after ctx
 // cancellation so callers don't hang.
 // ---------------------------------------------------------------------------
