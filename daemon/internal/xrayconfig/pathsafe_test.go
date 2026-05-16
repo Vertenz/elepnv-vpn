@@ -128,12 +128,20 @@ func TestCheckPathSafetyRejectsDotDotEvenWhenCleanedPathIsAllowed(t *testing.T) 
 
 // withAllowedRoot swaps the package-level allowedAbsoluteRoots variable for
 // the duration of the test, then restores it on cleanup.
+// The root is canonicalised via EvalSymlinks so the comparison in
+// checkPathSafety (which also calls EvalSymlinks on the candidate path)
+// passes on platforms where t.TempDir() returns a symlinked path
+// (e.g. macOS /var/folders/... → /private/var/folders/...).
 func withAllowedRoot(t *testing.T, dir string) {
 	t.Helper()
-	if !strings.HasSuffix(dir, "/") {
-		dir += "/"
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatalf("EvalSymlinks(%q): %v", dir, err)
+	}
+	if !strings.HasSuffix(resolved, "/") {
+		resolved += "/"
 	}
 	orig := allowedAbsoluteRoots
-	allowedAbsoluteRoots = []string{dir}
+	allowedAbsoluteRoots = []string{resolved}
 	t.Cleanup(func() { allowedAbsoluteRoots = orig })
 }
