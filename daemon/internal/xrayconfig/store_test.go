@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -225,6 +226,29 @@ func TestStoreConcurrentAdds(t *testing.T) {
 	}
 	if len(infos) != goroutines*perGoroutine {
 		t.Fatalf("got %d entries, want %d", len(infos), goroutines*perGoroutine)
+	}
+}
+
+func TestAddProducesExactly0600EvenWithHostileUmask(t *testing.T) {
+	// Build the store (and its temp directories) before restricting the umask so
+	// that t.TempDir() / os.MkdirAll inside newStore still succeed.
+	store, dir := newStore(t, "exit 0\n")
+
+	// Force an unusual umask so a renameio call that respects umask would
+	// downgrade 0o600 → 0o400. We restore the original at cleanup.
+	orig := syscall.Umask(0o177)
+	defer syscall.Umask(orig)
+
+	id, err := store.Add(context.Background(), []byte(validCfg))
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	fi, err := os.Stat(filepath.Join(dir, id.String()+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0o600 {
+		t.Fatalf("mode = %v, want 0600 (umask must be ignored per spec §6.1)", fi.Mode().Perm())
 	}
 }
 

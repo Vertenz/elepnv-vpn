@@ -24,9 +24,15 @@ import (
 // hold an ID value. We don't bury the type — Store API uses it directly.
 type ULID = ulid.ULID
 
-// ParseULID parses a 26-character Crockford-base32 ULID string. Returns
-// ErrConfigUnknown if the input isn't a syntactically valid ULID, so callers
-// can treat "bad id from the wire" the same as "id not in store".
+// ParseULID parses a 26-character Crockford-base32 ULID string.
+//
+// Returns ErrConfigUnknown — NOT ErrInvalidParams — when the input is not a
+// syntactically valid ULID. The intentional conflation lets callers handle
+// "you sent garbage" and "we don't have that id" with one branch: in both
+// cases the right behaviour is "this id does not exist". The cost is that
+// the renderer cannot distinguish a malformed id (likely a bug on its side)
+// from a stale id (likely user state drift). Plan 4 may revisit if telemetry
+// shows the distinction matters.
 func ParseULID(s string) (ULID, error) {
 	id, err := ulid.ParseStrict(s)
 	if err != nil {
@@ -72,11 +78,11 @@ func NewStore(dir, xrayPath, expectedSocksAddr string) *Store {
 
 // Add performs, in strict order:
 //
-//  1. checkPathSafety(jsonBytes)                        (§6.6, also validates JSON)
+//  1. checkPathSafety(jsonBytes)                        (§6.6; subsumes json.Valid via Unmarshal)
 //  2. checkInboundSafety(jsonBytes, expectedSocksAddr)  (§6.7)
-//  3. ulid.Make() + atomic write to <ulid>.json via renameio
-//  4. `xrayPath run -test -c <path>`
-//  5. On success: keep the file. On any failure: unlink it.
+//  3. ulid.Make() + atomic write to <ulid>.json
+//  4. `xrayPath run -test -c <stored>`
+//  5. On success: keep file. On failure: unlink it.
 //
 // Steps 1-2 reject without spawning any subprocess — cheap and safe.
 func (s *Store) Add(ctx context.Context, jsonBytes []byte) (ULID, error) {
@@ -94,7 +100,9 @@ func (s *Store) Add(ctx context.Context, jsonBytes []byte) (ULID, error) {
 	finalPath := s.pathFor(id)
 	// renameio writes to a sibling temp file then renames atomically; on any
 	// error from WriteFile the temp is cleaned up automatically.
-	if err := renameio.WriteFile(finalPath, jsonBytes, 0o600); err != nil {
+	// WithStaticPermissions sets 0o600 ignoring the process umask, satisfying
+	// spec §6.1 rev-4 P1-4 which mandates exactly 0o600 regardless of umask.
+	if err := renameio.WriteFile(finalPath, jsonBytes, 0o600, renameio.WithStaticPermissions(0o600)); err != nil {
 		return ULID{}, fmt.Errorf("atomic write: %w", err)
 	}
 
