@@ -70,16 +70,22 @@ func (m *Machine) handleConnectDone(c cmdConnectDone) {
 		m.postState(ConnStatus{State: StateDisconnected, Since: time.Now()})
 	case errors.Is(c.result.err, context.DeadlineExceeded):
 		m.postState(ConnStatus{
-			State:   StateError,
-			Message: derr.ErrConnectTimeout.Error(),
-			Since:   time.Now(),
+			State:       StateError,
+			Message:     derr.ErrConnectTimeout.Error(),
+			ErrorSymbol: derr.ErrConnectTimeout.Symbol,
+			Since:       time.Now(),
 		})
 		m.armAutoRevert(m.deps.cfg.AutoRevertDelay)
 	case c.result.err != nil:
+		symbol := ""
+		if de := derr.AsDerr(c.result.err); de != nil {
+			symbol = de.Symbol
+		}
 		m.postState(ConnStatus{
-			State:   StateError,
-			Message: c.result.err.Error(),
-			Since:   time.Now(),
+			State:       StateError,
+			Message:     c.result.err.Error(),
+			ErrorSymbol: symbol,
+			Since:       time.Now(),
 		})
 		m.armAutoRevert(m.deps.cfg.AutoRevertDelay)
 	default:
@@ -170,10 +176,14 @@ func (m *Machine) handleChildExit(exit supervisor.Exit) {
 	}
 	m.activeID = xrayconfig.ULID{}
 
+	// The child died unexpectedly. We don't have a derr.Error from it directly,
+	// so synthesize one — the renderer can match on xray_died_early to know
+	// this was a runtime crash (vs e.g. inbound_not_ready at connect time).
 	m.postState(ConnStatus{
-		State:   StateError,
-		Message: fmt.Sprintf("xray exited: %v (stderr: %s)", exit.Err, truncate(exit.Stderr, 200)),
-		Since:   time.Now(),
+		State:       StateError,
+		Message:     fmt.Sprintf("xray exited: %v (stderr: %s)", exit.Err, truncate(exit.Stderr, 200)),
+		ErrorSymbol: derr.ErrXrayDiedEarly.Symbol,
+		Since:       time.Now(),
 	})
 	m.armAutoRevert(m.deps.cfg.AutoRevertDelay)
 }

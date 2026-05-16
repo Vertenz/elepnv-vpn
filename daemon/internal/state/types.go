@@ -20,11 +20,12 @@ const (
 // ConnStatus is the per-axis connection snapshot the actor emits as the
 // payload of State.Changed and stores into state.json.
 type ConnStatus struct {
-	State    string    `json:"state"`
-	ConfigID string    `json:"configID,omitempty"`
-	XrayPid  int       `json:"xrayPid,omitempty"`
-	Since    time.Time `json:"since"`
-	Message  string    `json:"message,omitempty"`
+	State       string    `json:"state"`
+	ConfigID    string    `json:"configID,omitempty"`
+	XrayPid     int       `json:"xrayPid,omitempty"`
+	Since       time.Time `json:"since"`
+	Message     string    `json:"message,omitempty"`
+	ErrorSymbol string    `json:"errorSymbol,omitempty"` // populated when State == StateError; stable derr.Symbol
 }
 
 // Status is the combined snapshot returned by Tunnel.GetStatus.

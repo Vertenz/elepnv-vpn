@@ -2,6 +2,8 @@ package state
 
 import (
 	"time"
+
+	"elepn/daemon/internal/xrayconfig"
 )
 
 func (m *Machine) armAutoRevert(d time.Duration) {
@@ -22,5 +24,6 @@ func (m *Machine) handleAutoRevert() {
 	if m.state.State != StateError {
 		return
 	}
+	m.activeID = xrayconfig.ULID{}
 	m.postState(ConnStatus{State: StateDisconnected, Since: time.Now()})
 }
