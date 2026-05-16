@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
+	"os"
 	"os/user"
 	"path/filepath"
 	"testing"
@@ -131,7 +133,11 @@ func TestServerCloseUnlinksSocket(t *testing.T) {
 	if err := srv.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if _, err := net.Dial("unix", sockPath); err == nil {
-		t.Fatal("expected dial to fail after Close")
+	_, err := os.Stat(sockPath)
+	if err == nil {
+		t.Fatalf("expected socket file to be unlinked, but it still exists at %s", sockPath)
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("unexpected stat error: %v", err)
 	}
 }
