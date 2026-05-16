@@ -39,6 +39,14 @@ func recoveryScan(ctx context.Context, log *slog.Logger, configsDir string) erro
 		if p.pgid == p.pid {
 			target = -p.pid
 		}
+		// PID-reuse guard: re-read the process's starttime and bail if it
+		// changed since the scan.  This protects against the kernel reusing the
+		// pid for a different process between listOurXray and the Kill call.
+		if cur := readProcInfo(p.pid); cur == nil || cur.starttime != p.starttime {
+			log.Warn("pid changed identity between scan and kill — skipping",
+				"pid", p.pid, "scan_starttime", p.starttime)
+			continue
+		}
 		if err := killGraceful(ctx, target, 5*time.Second); err != nil {
 			log.Error("killGraceful failed during recovery",
 				"pid", p.pid, "target", target, "err", err)
