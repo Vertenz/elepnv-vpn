@@ -10,8 +10,9 @@ import (
 )
 
 // doConnect is the long-running worker that does the heavy lifting outside
-// the actor goroutine. Posts cmdConnectProgress mid-flight and a final
-// cmdConnectDone via the `progress` callback. Spec §3.5.
+// the actor goroutine. Posts cmdConnectProgress mid-flight via the `progress`
+// callback; returns a connectResult that the caller dispatches as cmdConnectDone.
+// Spec §3.5.
 func doConnect(
 	ctx context.Context,
 	d deps,
@@ -30,6 +31,7 @@ func doConnect(
 		}
 	}()
 
+	// Guard against cancellation in the window between goroutine spawn and first use of ctx.
 	if err := ctx.Err(); err != nil {
 		result.err = err
 		return
