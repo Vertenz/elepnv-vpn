@@ -165,20 +165,8 @@ func (m *Machine) handleGetStatus(c cmdGetStatus) {
 // Stub handlers — Tasks 9/10 will replace these with real implementations.
 // ---------------------------------------------------------------------------
 
-func (m *Machine) handleConnect(c cmdConnect) {
-	c.reply <- nil // TODO Task 9
-}
-
 func (m *Machine) handleDisconnect(c cmdDisconnect) {
 	c.reply <- nil // TODO Task 10
-}
-
-func (m *Machine) handleConnectProgress(_ cmdConnectProgress) {
-	// TODO Task 9
-}
-
-func (m *Machine) handleConnectDone(_ cmdConnectDone) {
-	// TODO Task 9
 }
 
 func (m *Machine) handleDisconnectDone(_ cmdDisconnectDone) {

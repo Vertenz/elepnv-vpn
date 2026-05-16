@@ -1,0 +1,78 @@
+package state
+
+import (
+	"context"
+	"time"
+
+	"elepn/daemon/internal/derr"
+	"elepn/daemon/internal/supervisor"
+	"elepn/daemon/internal/xrayconfig"
+)
+
+// doConnect is the long-running worker that does the heavy lifting outside
+// the actor goroutine. Posts cmdConnectProgress mid-flight and a final
+// cmdConnectDone via the `progress` callback. Spec §3.5.
+func doConnect(
+	ctx context.Context,
+	d deps,
+	progress func(command) bool,
+	gen int64,
+	id xrayconfig.ULID,
+) (result connectResult) {
+	result.id = id
+	cu := newCleanupStack()
+	defer func() {
+		if result.err != nil {
+			cu.run(context.Background())
+			result.cleanup = nil
+		} else {
+			result.cleanup = cu
+		}
+	}()
+
+	if err := ctx.Err(); err != nil {
+		result.err = err
+		return
+	}
+
+	cfgPath, err := d.cfgs.PathFor(id)
+	if err != nil {
+		result.err = err
+		return
+	}
+	if vr, err := d.cfgs.Validate(ctx, id); err != nil {
+		result.err = err
+		return
+	} else if !vr.OK {
+		result.err = derr.ErrConfigInvalid.WithMessage(vr.Error)
+		return
+	}
+
+	// Validation OK — tell the actor to flip Validating → Connecting.
+	if !progress(cmdConnectProgress{gen: gen, newState: StateConnecting}) {
+		result.err = ctx.Err()
+		return
+	}
+
+	child, err := d.sup.Start(ctx, cfgPath)
+	if err != nil {
+		result.err = derr.WrapSpawn(err)
+		return
+	}
+	cu.push("stop-xray", func() {
+		stopCtx, c := context.WithTimeout(context.Background(), 10*time.Second)
+		defer c()
+		_ = d.sup.Stop(stopCtx, child, 5*time.Second)
+	})
+	result.child = child
+
+	if err := supervisor.AwaitProcessAlive(ctx, child, 1*time.Second); err != nil {
+		result.err = derr.WrapDiedEarly(err)
+		return
+	}
+	if err := supervisor.AwaitSocksReady(ctx, d.cfg.SocksAddr, 5*time.Second); err != nil {
+		result.err = derr.WrapInbound(err)
+		return
+	}
+	return
+}

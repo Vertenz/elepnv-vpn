@@ -80,15 +80,14 @@ func TestGetStatusViaPublicAPI(t *testing.T) {
 
 func TestConnectReturnsAlreadyConnectedFromConnected(t *testing.T) {
 	m := newTestMachine(t)
+	// Pre-set state to Connected so the guard rejects the second Connect.
+	m.state = ConnStatus{State: StateConnected}
 	m.Start()
 	t.Cleanup(func() { _ = m.Shutdown(context.Background()) })
 
-	// Rely on the stub handleConnect which does reply <- nil (Task 7 stub).
-	// The state guard isn't enforced until Task 9. For Task 8 we just verify
-	// the Connect method's plumbing works (channel send + reply receive).
 	id, _ := xrayconfig.ParseULID("01HX7N9KQ8R3JCBVB6Z3K9V4FK")
-	if err := m.Connect(context.Background(), id); err != nil {
-		t.Fatalf("Connect: %v", err)
+	if err := m.Connect(context.Background(), id); err != derr.ErrAlreadyConnected {
+		t.Fatalf("Connect: err = %v, want ErrAlreadyConnected", err)
 	}
 }
 
