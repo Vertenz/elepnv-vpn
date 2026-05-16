@@ -1,0 +1,243 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "version": "1.0.0",
+  "transport": {
+    "framing": "ndjson",
+    "encoding": "utf-8",
+    "max_request_bytes": 262144
+  },
+  "auth": {
+    "mechanism": "SO_PEERCRED",
+    "group": "xrayd",
+    "root_bypass": true
+  },
+  "methods": {
+    "Daemon.Ping": {
+      "params": null,
+      "result": { "ok": "boolean" },
+      "errors": ["unauthorized"]
+    },
+    "Daemon.GetVersion": {
+      "params": null,
+      "result": { "daemon": "string", "xray": "string | null" },
+      "errors": ["unauthorized"]
+    },
+    "Configs.Add": {
+      "params": { "json": "string (xray-core config JSON)" },
+      "result": { "id": "ulid" },
+      "errors": [
+        "xray_not_found",
+        "config_malformed_json",
+        "path_unsafe",
+        "inbound_unsafe",
+        "config_invalid",
+        "config_quota_exceeded",
+        "validation_busy",
+        "validation_timeout",
+        "internal"
+      ]
+    },
+    "Configs.List": {
+      "params": null,
+      "result": { "configs": "ConfigInfo[]" },
+      "errors": ["xray_not_found", "internal"]
+    },
+    "Configs.Get": {
+      "params": { "id": "ulid" },
+      "result": { "json": "string" },
+      "errors": ["xray_not_found", "config_unknown", "internal"]
+    },
+    "Configs.Remove": {
+      "params": { "id": "ulid" },
+      "result": { "ok": "boolean" },
+      "errors": ["xray_not_found", "config_unknown", "config_in_use", "internal"]
+    },
+    "Configs.Validate": {
+      "params": { "id": "ulid" },
+      "result": { "ok": "boolean", "error": "string?", "stderr": "string?" },
+      "errors": [
+        "xray_not_found",
+        "config_unknown",
+        "validation_busy",
+        "validation_timeout",
+        "internal"
+      ]
+    },
+    "Tunnel.Connect": {
+      "params": { "id": "ulid" },
+      "result": { "state": "TunnelState (Validating)" },
+      "errors": ["xray_not_found", "already_connected", "rate_limited", "internal"],
+      "async_state_via": "State.Changed"
+    },
+    "Tunnel.Disconnect": {
+      "params": null,
+      "result": { "state": "TunnelState (Disconnecting)" },
+      "errors": ["xray_not_found", "not_connected", "internal"],
+      "async_state_via": "State.Changed"
+    },
+    "Tunnel.Switch": {
+      "params": { "id": "ulid" },
+      "result": { "state": "TunnelState" },
+      "errors": [
+        "xray_not_found",
+        "already_connected (during Disconnecting)",
+        "rate_limited",
+        "internal"
+      ],
+      "async_state_via": "State.Changed"
+    },
+    "Tunnel.GetStatus": {
+      "params": null,
+      "result": { "conn": "ConnStatus", "health": "HealthStatus | null" },
+      "errors": ["xray_not_found", "internal"]
+    },
+    "Health.SetEnabled": {
+      "params": { "enabled": "boolean" },
+      "result": { "ok": "boolean" },
+      "errors": ["internal"]
+    },
+    "Health.Probe": {
+      "params": null,
+      "result": "HealthStatus",
+      "errors": ["health_disabled", "internal"]
+    },
+    "Health.GetConfig": {
+      "params": null,
+      "result": { "enabled": "boolean", "endpoint": "string", "intervalSeconds": "number" },
+      "errors": ["internal"]
+    }
+  },
+  "events": {
+    "State.Changed": {
+      "params": "ConnStatus",
+      "fires_when": "Any tunnel state transition"
+    },
+    "Configs.Changed": {
+      "params": { "added": "ulid[]?", "removed": "ulid[]?" },
+      "fires_when": "Configs.Add or Configs.Remove succeeds"
+    },
+    "Health.Changed": {
+      "params": "HealthStatus",
+      "fires_when": "Health state transitions (Online ↔ Degraded ↔ Offline ↔ Unknown)"
+    }
+  },
+  "types": {
+    "TunnelState": [
+      "Disconnected",
+      "Validating",
+      "Connecting",
+      "Connected",
+      "Disconnecting",
+      "Error"
+    ],
+    "Health": ["Online", "Degraded", "Offline", "Unknown"],
+    "ConnStatus": {
+      "state": "TunnelState",
+      "configID": "ulid?",
+      "xrayPid": "number?",
+      "since": "ISO-8601 string",
+      "message": "string? (populated when state=Error; free-text Go error)",
+      "errorSymbol": "string? (populated when state=Error; stable derr.Symbol — match this, not message)"
+    },
+    "HealthStatus": {
+      "health": "Health",
+      "latencyMs": "number?",
+      "lastChecked": "ISO-8601 string?"
+    },
+    "ConfigInfo": {
+      "id": "ulid",
+      "sha256": "hex string",
+      "addedAt": "ISO-8601 string"
+    }
+  },
+  "errors": {
+    "internal": { "code": -32000, "detail": null },
+    "xray_not_found": {
+      "code": -32001,
+      "detail": null,
+      "renderer_cta": "Install xray-core via the XTLS installer."
+    },
+    "config_unknown": { "code": -32002, "detail": null },
+    "config_malformed_json": { "code": -32003, "detail": null },
+    "config_invalid": {
+      "code": -32004,
+      "detail": { "summary": "string", "stderr": "string?" },
+      "renderer_cta": "Show stderr to the user; xray rejected the config."
+    },
+    "config_in_use": {
+      "code": -32005,
+      "detail": null,
+      "renderer_cta": "Disconnect before removing the active config."
+    },
+    "xray_spawn_failed": {
+      "code": -32006,
+      "detail": null,
+      "via": "ConnStatus.errorSymbol (async)"
+    },
+    "xray_died_early": {
+      "code": -32007,
+      "detail": null,
+      "via": "ConnStatus.errorSymbol (async)"
+    },
+    "inbound_not_ready": {
+      "code": -32008,
+      "detail": null,
+      "via": "ConnStatus.errorSymbol (async)"
+    },
+    "connect_timeout": {
+      "code": -32009,
+      "detail": null,
+      "via": "ConnStatus.errorSymbol (async)"
+    },
+    "already_connected": { "code": -32010, "detail": null },
+    "not_connected": { "code": -32011, "detail": null },
+    "unauthorized": {
+      "code": -32012,
+      "detail": null,
+      "renderer_cta": "Run: sudo usermod -aG xrayd $USER && logout. Note: this error arrives as id:null before any request.",
+      "wire_oddity": "Arrives as id:null error response BEFORE any request you send. Treat as connection-level fatal."
+    },
+    "validation_timeout": { "code": -32013, "detail": null },
+    "daemon_shutting_down": {
+      "code": -32014,
+      "detail": null,
+      "renderer_cta": "Daemon is restarting; reconnect and call Tunnel.GetStatus to resync."
+    },
+    "path_unsafe": {
+      "code": -32015,
+      "detail": { "pointer": "JSON pointer", "value": "offending string" },
+      "renderer_cta": "Highlight the offending JSON field."
+    },
+    "request_too_large": { "code": -32016, "detail": null },
+    "config_quota_exceeded": {
+      "code": -32017,
+      "detail": null,
+      "renderer_cta": "Remove an old config first (limit is 1000)."
+    },
+    "validation_busy": {
+      "code": -32018,
+      "detail": null,
+      "renderer_cta": "Retry after a short delay; semaphore queue is full."
+    },
+    "rate_limited": {
+      "code": -32019,
+      "detail": null,
+      "renderer_cta": "Back off — too many Connect attempts (max 10/min per connection)."
+    },
+    "inbound_unsafe": {
+      "code": -32020,
+      "detail": { "pointer": "JSON pointer", "reason": "string" },
+      "renderer_cta": "Show reason; the user's config has a forbidden inbound shape."
+    },
+    "health_disabled": {
+      "code": -32021,
+      "detail": null,
+      "renderer_cta": "Call Health.SetEnabled(true) before Health.Probe."
+    }
+  },
+  "reconnect_protocol": {
+    "description": "On socket disconnect, the renderer must call Tunnel.GetStatus and Health.GetConfig on the new connection to resync. Events between disconnect and reconnect are permanently lost.",
+    "heartbeat": "Daemon.Ping with 5s timeout; on timeout close + reconnect.",
+    "first_frame_may_be_unauthorized": "If the user is not in the xrayd group, the first frame on a new connection is {error: {code:-32012, ...}, id:null}."
+  }
+}
