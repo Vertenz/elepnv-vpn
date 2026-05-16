@@ -261,8 +261,14 @@ func (s *Server) serveConn(c *net.UnixConn) {
 
 	// Per-connection context derived from the server's base context, so an
 	// in-flight RPC observes daemon shutdown (Close cancels baseCtx).
+	// The rate-bucket is attached here once per connection rather than per
+	// request — it's connection-scoped state and constructing a new WithValue
+	// node on every handleLine call is wasteful.
 	connCtx, cancel := context.WithCancel(s.baseCtx)
 	defer cancel()
+	if handle.rate != nil {
+		connCtx = context.WithValue(connCtx, ctxKeyConnRate{}, handle.rate)
+	}
 
 	sc := NewScanner(c)
 	for sc.Scan() {
@@ -298,9 +304,6 @@ func (s *Server) handleLine(ctx context.Context, h *connHandle, line []byte) {
 			s.log.Error("marshal decode-error response failed", "err", mErr)
 		}
 		return
-	}
-	if h.rate != nil {
-		ctx = context.WithValue(ctx, ctxKeyConnRate{}, h.rate)
 	}
 	if req.IsNotification() {
 		// JSON-RPC §4.1: servers MUST NOT respond to notifications. Plan 1
