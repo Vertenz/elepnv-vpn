@@ -139,3 +139,14 @@ func NewInboundUnsafe(pointer, reason string) *Error {
 		"reason":  reason,
 	}).WithMessage(reason)
 }
+
+// WrapSpawn returns ErrXraySpawnFailed wrapping cause for diagnostics.
+func WrapSpawn(cause error) *Error { return ErrXraySpawnFailed.With(cause) }
+
+// WrapDiedEarly returns ErrXrayDiedEarly wrapping cause; cause should embed
+// the captured xray stderr tail for operator triage.
+func WrapDiedEarly(cause error) *Error { return ErrXrayDiedEarly.With(cause) }
+
+// WrapInbound returns ErrInboundNotReady wrapping cause (typically a SOCKS
+// dial/handshake failure or deadline-exceeded).
+func WrapInbound(cause error) *Error { return ErrInboundNotReady.With(cause) }

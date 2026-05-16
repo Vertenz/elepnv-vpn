@@ -123,3 +123,53 @@ func TestNewInboundUnsafeEmbedsDetail(t *testing.T) {
 		t.Fatalf("detail.reason = %v", detail["reason"])
 	}
 }
+
+func TestPlan3SentinelsHaveStableSymbols(t *testing.T) {
+	cases := []struct {
+		name string
+		err  *derr.Error
+		code int
+		sym  string
+	}{
+		{"xray_spawn_failed", derr.ErrXraySpawnFailed, -32006, "xray_spawn_failed"},
+		{"xray_died_early", derr.ErrXrayDiedEarly, -32007, "xray_died_early"},
+		{"inbound_not_ready", derr.ErrInboundNotReady, -32008, "inbound_not_ready"},
+		{"connect_timeout", derr.ErrConnectTimeout, -32009, "connect_timeout"},
+		{"already_connected", derr.ErrAlreadyConnected, -32010, "already_connected"},
+		{"not_connected", derr.ErrNotConnected, -32011, "not_connected"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if c.err.Code != c.code {
+				t.Fatalf("%s.Code = %d, want %d", c.name, c.err.Code, c.code)
+			}
+			if c.err.Symbol != c.sym {
+				t.Fatalf("%s.Symbol = %q, want %q", c.name, c.err.Symbol, c.sym)
+			}
+		})
+	}
+}
+
+func TestWrapSpawnPreservesIdentity(t *testing.T) {
+	wrapped := derr.WrapSpawn(errors.New("permission denied"))
+	if !errors.Is(wrapped, derr.ErrXraySpawnFailed) {
+		t.Fatal("WrapSpawn must produce an error that errors.Is(_, ErrXraySpawnFailed)")
+	}
+	if !strings.Contains(wrapped.Error(), "permission denied") {
+		t.Fatalf("Cause not included: %v", wrapped)
+	}
+}
+
+func TestWrapDiedEarlyPreservesIdentity(t *testing.T) {
+	wrapped := derr.WrapDiedEarly(errors.New("exit status 1"))
+	if !errors.Is(wrapped, derr.ErrXrayDiedEarly) {
+		t.Fatal("WrapDiedEarly must produce an error that errors.Is(_, ErrXrayDiedEarly)")
+	}
+}
+
+func TestWrapInboundPreservesIdentity(t *testing.T) {
+	wrapped := derr.WrapInbound(errors.New("dial timeout"))
+	if !errors.Is(wrapped, derr.ErrInboundNotReady) {
+		t.Fatal("WrapInbound must produce an error that errors.Is(_, ErrInboundNotReady)")
+	}
+}
