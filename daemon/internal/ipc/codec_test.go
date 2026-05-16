@@ -102,7 +102,7 @@ func TestEncodeResponseRoundtrip(t *testing.T) {
 	type result struct {
 		OK bool `json:"ok"`
 	}
-	if err := ipc.EncodeResponse(&buf, id, result{OK: true}); err != nil {
+	if err := EncodeResponse(&buf, id, result{OK: true}); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -124,7 +124,7 @@ func TestEncodeResponseRoundtrip(t *testing.T) {
 
 func TestEncodeErrorIncludesSymbol(t *testing.T) {
 	var buf bytes.Buffer
-	if err := ipc.EncodeError(&buf, json.RawMessage(`1`), derr.ErrMethodNotFound.WithMessage("X.Y")); err != nil {
+	if err := EncodeError(&buf, json.RawMessage(`1`), derr.ErrMethodNotFound.WithMessage("X.Y")); err != nil {
 		t.Fatal(err)
 	}
 	var got map[string]any
@@ -140,7 +140,7 @@ func TestEncodeErrorIncludesSymbol(t *testing.T) {
 
 func TestEncodeNotificationOmitsID(t *testing.T) {
 	var buf bytes.Buffer
-	if err := ipc.EncodeNotification(&buf, "State.Changed", map[string]string{"state": "Disconnected"}); err != nil {
+	if err := EncodeNotification(&buf, "State.Changed", map[string]string{"state": "Disconnected"}); err != nil {
 		t.Fatal(err)
 	}
 	var got map[string]any

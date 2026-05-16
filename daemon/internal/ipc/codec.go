@@ -133,39 +133,6 @@ func MarshalNotification(method string, params any) ([]byte, error) {
 	return append(b, '\n'), nil
 }
 
-// EncodeResponse is a convenience wrapper around MarshalResponse + Write,
-// used by tests where a single goroutine controls the writer. Production
-// code paths in the IPC server use MarshalResponse directly so writes can
-// go through connHandle.write under its per-connection mutex.
-func EncodeResponse(w io.Writer, id json.RawMessage, result any) error {
-	b, err := MarshalResponse(id, result)
-	if err != nil {
-		return err
-	}
-	_, err = w.Write(b)
-	return err
-}
-
-// EncodeError — convenience wrapper, see EncodeResponse.
-func EncodeError(w io.Writer, id json.RawMessage, de *derr.Error) error {
-	b, err := MarshalError(id, de)
-	if err != nil {
-		return err
-	}
-	_, err = w.Write(b)
-	return err
-}
-
-// EncodeNotification — convenience wrapper, see EncodeResponse.
-func EncodeNotification(w io.Writer, method string, params any) error {
-	b, err := MarshalNotification(method, params)
-	if err != nil {
-		return err
-	}
-	_, err = w.Write(b)
-	return err
-}
-
 // ScanErr classifies a bufio.Scanner error after Scan returns false. It
 // returns ErrRequestTooLarge when the line exceeded MaxRequestBytes, and io.EOF
 // when the peer closed cleanly. Other errors are wrapped via ErrInternal.

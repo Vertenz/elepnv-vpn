@@ -154,6 +154,9 @@ Most developer machines don't have an `xrayd` group, so the following tests
 - `internal/ipc/server_test.go::TestPingRoundtrip`
 - `internal/ipc/server_test.go::TestGetVersionRoundtrip`
 - `internal/ipc/server_test.go::TestUnknownMethodReturnsError`
+- `internal/ipc/server_test.go::TestServerEchoesIDOnInvalidRequest`
+- `internal/ipc/server_test.go::TestServerNullIDOnParseError`
+- `internal/ipc/server_test.go::TestServerSilentlyDropsNotification`
 - `internal/ipc/server_test.go::TestServerCloseUnlinksSocket`
 - `cmd/xrayd/smoke_test.go::TestBinaryRespondsToPing`
 
