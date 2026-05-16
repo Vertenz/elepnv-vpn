@@ -9,7 +9,15 @@ description: |
   Electron client with a reserved privileged daemon layout.
 homepage: "https://example.invalid/elepn"
 license: "MIT"
-contents: []
+contents:
+  - src: ./dist/xrayd
+    dst: /usr/local/bin/xrayd
+    file_info:
+      mode: 0755
+  - src: ./daemon/packaging/xrayd.service
+    dst: /lib/systemd/system/xrayd.service
+    file_info:
+      mode: 0644
 
 scripts:
   postinstall: ./postinst.sh
