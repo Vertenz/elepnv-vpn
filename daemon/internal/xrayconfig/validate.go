@@ -5,8 +5,12 @@ import (
 	"errors"
 	"os/exec"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
+
+	"elepn/daemon/internal/derr"
 )
 
 // ValidateResult is the structured result of one `xray run -test` invocation.
@@ -27,6 +31,41 @@ type ValidateResult struct {
 // finishes in 10-50ms; 10s is a generous backstop against a hung subprocess.
 const validateTimeout = 10 * time.Second
 
+// MaxValidateConcurrent and MaxValidateQueue are package-level vars (not
+// consts) so tests can lower them without spawning real workloads. Production
+// code should treat them as constants after process startup.
+var (
+	MaxValidateConcurrent = 4
+	MaxValidateQueue      = 16
+)
+
+var (
+	validateSem     chan struct{}
+	validateSemOnce sync.Once
+	validateWaiters atomic.Int32
+)
+
+// validateSemaphore returns the shared channel semaphore, creating it on first
+// use. The sync.Once ensures a single allocation under concurrent first calls.
+func validateSemaphore() chan struct{} {
+	validateSemOnce.Do(func() {
+		validateSem = make(chan struct{}, MaxValidateConcurrent)
+	})
+	return validateSem
+}
+
+// ResetValidateLimitsForTests rebuilds the semaphore using the current
+// MaxValidateConcurrent / MaxValidateQueue values. Exported for tests only —
+// do not call from production code; the Once is intentionally bypassed here.
+func ResetValidateLimitsForTests() {
+	validateSem = make(chan struct{}, MaxValidateConcurrent)
+	validateWaiters.Store(0)
+	// Reset the Once so future calls to validateSemaphore() don't re-init with
+	// the old capacity (tests may call ResetValidateLimitsForTests multiple
+	// times in a single process run).
+	validateSemOnce = sync.Once{}
+}
+
 // stderrRingCap is the in-memory cap on captured xray stderr. 4 KiB holds the
 // banner + a handful of error lines, which is all summarize() needs.
 const stderrRingCap = 4 << 10
@@ -36,7 +75,32 @@ const stderrRingCap = 4 << 10
 // from running the subprocess (timeout, non-zero exit) become a non-OK
 // ValidateResult with err == nil; the err return is reserved for truly
 // unexpected I/O failures (exec lookup failure, etc.).
+//
+// At most MaxValidateConcurrent xray processes run simultaneously; up to
+// MaxValidateQueue additional callers may wait. Beyond that the call returns
+// derr.ErrValidationBusy immediately so the daemon's goroutine count stays
+// bounded under bursts (§8.3).
 func Validate(ctx context.Context, xrayPath, cfgPath string) (ValidateResult, error) {
+	// Reject immediately when the wait queue is already at capacity. The check
+	// is intentionally before Add so we never inflate the counter past the
+	// limit in the happy path.
+	if validateWaiters.Load() >= int32(MaxValidateQueue) {
+		return ValidateResult{}, derr.ErrValidationBusy
+	}
+	validateWaiters.Add(1)
+	defer validateWaiters.Add(-1)
+
+	// Block until a concurrency slot is free or the caller cancels. Honoring
+	// ctx here is critical: a daemon shutdown while many Validates are queued
+	// would otherwise block until all slots drained.
+	sem := validateSemaphore()
+	select {
+	case sem <- struct{}{}:
+	case <-ctx.Done():
+		return ValidateResult{}, ctx.Err()
+	}
+	defer func() { <-sem }()
+
 	ctx, cancel := context.WithTimeout(ctx, validateTimeout)
 	defer cancel()
 

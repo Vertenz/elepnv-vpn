@@ -2,11 +2,16 @@ package xrayconfig
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"elepn/daemon/internal/derr"
 )
 
 // requirePOSIXShell skips the test on platforms where /bin/sh is unavailable
@@ -134,5 +139,52 @@ exit 5
 	}
 	if !strings.Contains(got.Stderr, "END_OF_STDERR") {
 		t.Fatalf("Stderr should retain the tail, got %q", got.Stderr)
+	}
+}
+
+func TestValidateRespectsConcurrencyAndQueue(t *testing.T) {
+	// Lower limits so the test doesn't need to spawn many real processes.
+	MaxValidateConcurrent = 2
+	MaxValidateQueue = 3
+	ResetValidateLimitsForTests()
+	t.Cleanup(func() {
+		MaxValidateConcurrent = 4
+		MaxValidateQueue = 16
+		ResetValidateLimitsForTests()
+	})
+
+	binDir := t.TempDir()
+	// Fake xray that sleeps long enough for queue pressure to build before
+	// any slot is released.
+	xrayPath := fakeXray(t, binDir, "sleep 0.15\nexit 0\n")
+	cfgPath := filepath.Join(t.TempDir(), "cfg.json")
+	if err := os.WriteFile(cfgPath, []byte(`{}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// 7 concurrent Validates: 2 run immediately, 3 queue, 2 are rejected.
+	// With 5 ms stagger and 150 ms per Validate the queue fills before the
+	// first slot returns, so at least the 6th and 7th callers see ErrValidationBusy.
+	var wg sync.WaitGroup
+	var busy, ok atomic.Int32
+	for i := 0; i < 7; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := Validate(context.Background(), xrayPath, cfgPath)
+			if errors.Is(err, derr.ErrValidationBusy) {
+				busy.Add(1)
+			} else if err == nil {
+				ok.Add(1)
+			}
+		}()
+		// Small stagger so goroutines arrive in order and the queue has time
+		// to develop before we check the busy counter.
+		time.Sleep(5 * time.Millisecond)
+	}
+	wg.Wait()
+	if busy.Load() < 1 {
+		t.Fatalf("expected ErrValidationBusy on at least one Validate; got busy=%d ok=%d",
+			busy.Load(), ok.Load())
 	}
 }

@@ -202,6 +202,18 @@ func TestValidateReRunsXrayAgainstStoredFile(t *testing.T) {
 
 // Concurrent-safety smoke: 20 goroutines each Adds 5 configs. List sees all 100.
 func TestStoreConcurrentAdds(t *testing.T) {
+	// Raise the concurrency limit so 20 goroutines with an instant fake xray
+	// never hit the semaphore queue cap (which would cause spurious rejections
+	// unrelated to the store's own concurrency-safety).
+	xrayconfig.MaxValidateConcurrent = 20
+	xrayconfig.MaxValidateQueue = 20
+	xrayconfig.ResetValidateLimitsForTests()
+	t.Cleanup(func() {
+		xrayconfig.MaxValidateConcurrent = 4
+		xrayconfig.MaxValidateQueue = 16
+		xrayconfig.ResetValidateLimitsForTests()
+	})
+
 	store, _ := newStore(t, "exit 0\n")
 	const goroutines, perGoroutine = 20, 5
 	done := make(chan struct{}, goroutines)
