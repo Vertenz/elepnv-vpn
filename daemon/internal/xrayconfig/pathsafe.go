@@ -17,9 +17,9 @@ import (
 //
 // This list intentionally covers only the common cases. Keys NOT in this set
 // (e.g. socketPath, geoFile, domainList, dnsConfigFile) still get caught by
-// the defense-in-depth looksLikePath scan inside walk() — but only when the
-// value visibly contains '/' or other path markers. A future xray-core bump
-// that introduces a path-bearing key whose values are bare basenames could
+// the defense-in-depth looksSuspicious scan inside walk() — but only when the
+// value starts with a known sensitive filesystem prefix. A future xray-core
+// bump that introduces a path-bearing key whose values are bare basenames could
 // slip through; the v1 trade-off is acceptable because the daemon runs with
 // systemd ProtectHome/ProtectSystem so even a slipped path can't escape.
 // See docs/xray-core-linux-sources.md for the xray-core source-of-truth.
@@ -29,9 +29,12 @@ var pathBearingKeys = map[string]struct{}{
 	"caCertificateFile": {},
 	"access":            {}, // log.access
 	"error":             {}, // log.error
-	"path":              {}, // various sub-objects
-	"dat":               {}, // geo-loaders
-	"file":              {},
+	// path is intentionally NOT here — xray uses "path" for URL paths in
+	// transport configs (wsSettings.path, grpcSettings.path, xhttpSettings.path).
+	// Treating it as filesystem-bearing by key name false-rejects the most
+	// common VLESS/VMess-over-WS configs before xray -test even runs.
+	"dat":  {}, // geo-loaders
+	"file": {},
 }
 
 // allowedDSLPrefixes are xray's own DSL selectors — they look path-like
@@ -87,8 +90,9 @@ func walk(node any, ptr string) error {
 			}
 		}
 	case string:
-		// Defense-in-depth: path-shaped string under an unknown key.
-		if looksLikePath(v) && !isAllowedDSL(v) && !isAllowedAbsolutePath(v) {
+		// Defense-in-depth: flag strings that look like attempts to reach
+		// sensitive filesystem paths at JSON positions xray doesn't expect.
+		if looksSuspicious(v) && !isAllowedDSL(v) && !isAllowedAbsolutePath(v) {
 			return derr.NewPathUnsafe(ptr, v)
 		}
 	}
@@ -134,16 +138,34 @@ func validatePathValue(ptr, s string) error {
 	return nil
 }
 
-func looksLikePath(s string) bool {
-	if strings.Contains(s, "/") {
-		return true
-	}
+// suspiciousAbsolutePrefixes are filesystem paths that xray should never need
+// to reference at any non-path-bearing position. Catches obvious bypass
+// attempts (e.g. an attacker putting "/etc/passwd" in a field that xray
+// happens to read as a file — even if the field isn't in our pathBearingKeys).
+// Narrower than the previous "any string containing /" scan, which
+// false-rejected legitimate URL paths in transport configs.
+var suspiciousAbsolutePrefixes = []string{
+	"/etc/",
+	"/root/",
+	"/proc/",
+	"/sys/",
+	"/dev/",
+	"/boot/",
+	"/var/lib/xrayd/", // xrayd's own storage — config shouldn't reference it
+}
+
+func looksSuspicious(s string) bool {
 	if strings.HasPrefix(s, "~") {
 		return true
 	}
 	// Windows path heuristic (e.g. "C:\foo") — defense in depth on Linux too.
 	if len(s) > 2 && s[1] == ':' && (s[2] == '\\' || s[2] == '/') {
 		return true
+	}
+	for _, p := range suspiciousAbsolutePrefixes {
+		if strings.HasPrefix(s, p) {
+			return true
+		}
 	}
 	return false
 }

@@ -40,11 +40,15 @@ func TestCheckPathSafetyRejectsHomePath(t *testing.T) {
 	}
 }
 
-func TestCheckPathSafetyRejectsExtPrefix(t *testing.T) {
+func TestCheckPathSafetyExtPrefixInRoutingPathKeyIsAllowed(t *testing.T) {
+	// Before the fix, "path" was in pathBearingKeys, so an ext: value there was
+	// rejected by validatePathValue. After the fix, routing.rules[*].path is a
+	// URL path field — not filesystem-bearing — and ext: in a URL path is
+	// semantically odd but not a security risk (looksSuspicious won't flag it).
 	withAllowedRoot(t, t.TempDir())
 	cfg := []byte(`{"routing":{"rules":[{"path":"ext:Geosite:cn-domain.dat"}]}}`)
-	if err := checkPathSafety(cfg); !errors.Is(err, derr.ErrPathUnsafe) {
-		t.Fatalf("err = %v, want ErrPathUnsafe", err)
+	if err := checkPathSafety(cfg); err != nil {
+		t.Fatalf("ext: in routing path field should now be accepted, got: %v", err)
 	}
 }
 
@@ -123,6 +127,109 @@ func TestCheckPathSafetyRejectsDotDotEvenWhenCleanedPathIsAllowed(t *testing.T) 
 	cfg := []byte(`{"dns":{"dat":"` + dir + `/subdir/../geosite.dat"}}`)
 	if err := checkPathSafety(cfg); !errors.Is(err, derr.ErrPathUnsafe) {
 		t.Fatalf("err = %v, want ErrPathUnsafe — raw `..` must be rejected even if cleaned path is in the allowlist", err)
+	}
+}
+
+// --- Acceptance tests: the fix's reason for existing ---
+
+func TestCheckPathSafetyCurrentlyRejectsWebSocketPath(t *testing.T) {
+	withAllowedRoot(t, t.TempDir())
+	cfg := []byte(`{"outbounds":[{"streamSettings":{"network":"ws","wsSettings":{"path":"/ray"}}}]}`)
+	if err := checkPathSafety(cfg); err == nil {
+		t.Skip("bug fixed already")
+	}
+	t.Logf("current behavior (bug): confirmed rejected")
+}
+
+func TestCheckPathSafetyAcceptsWebSocketPath(t *testing.T) {
+	withAllowedRoot(t, t.TempDir())
+	cfg := []byte(`{
+		"outbounds": [{
+			"tag": "proxy",
+			"protocol": "vless",
+			"streamSettings": {
+				"network": "ws",
+				"wsSettings": { "path": "/ray", "headers": { "Host": "example.com" } }
+			}
+		}]
+	}`)
+	if err := checkPathSafety(cfg); err != nil {
+		t.Fatalf("WebSocket path should be accepted, got: %v", err)
+	}
+}
+
+func TestCheckPathSafetyAcceptsGRPCPath(t *testing.T) {
+	withAllowedRoot(t, t.TempDir())
+	cfg := []byte(`{
+		"outbounds": [{
+			"streamSettings": {
+				"network": "grpc",
+				"grpcSettings": { "serviceName": "GunService" }
+			}
+		}],
+		"inbounds": [{
+			"streamSettings": {
+				"network": "grpc",
+				"grpcSettings": { "serviceName": "S", "multiMode": true }
+			}
+		}]
+	}`)
+	if err := checkPathSafety(cfg); err != nil {
+		t.Fatalf("gRPC config should be accepted, got: %v", err)
+	}
+}
+
+func TestCheckPathSafetyAcceptsXHTTPPath(t *testing.T) {
+	withAllowedRoot(t, t.TempDir())
+	cfg := []byte(`{
+		"outbounds": [{
+			"streamSettings": {
+				"network": "xhttp",
+				"xhttpSettings": { "path": "/xhttp-endpoint", "mode": "auto" }
+			}
+		}]
+	}`)
+	if err := checkPathSafety(cfg); err != nil {
+		t.Fatalf("XHTTP config should be accepted, got: %v", err)
+	}
+}
+
+// --- Security tests: the fix must preserve these ---
+
+func TestCheckPathSafetyStillRejectsSensitivePrefixes(t *testing.T) {
+	withAllowedRoot(t, t.TempDir())
+	cases := []struct{ name, s string }{
+		{"etc-passwd", "/etc/passwd"},
+		{"root-ssh", "/root/.ssh/authorized_keys"},
+		{"proc-self", "/proc/self/mem"},
+		{"sys-class", "/sys/class/net"},
+		{"dev-null", "/dev/null"},
+		{"home-tilde", "~/.bashrc"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Place the suspicious value in a non-path-bearing key.
+			cfg := []byte(`{"routing":{"rules":[{"domain":["` + tc.s + `"]}]}}`)
+			if err := checkPathSafety(cfg); !errors.Is(err, derr.ErrPathUnsafe) {
+				t.Fatalf("err = %v, want ErrPathUnsafe for %q", err, tc.s)
+			}
+		})
+	}
+}
+
+func TestCheckPathSafetyStillRejectsBadCertificateFile(t *testing.T) {
+	withAllowedRoot(t, t.TempDir())
+	cfg := []byte(`{"inbounds":[{"streamSettings":{"tlsSettings":{"certificates":[{"certificateFile":"/etc/passwd"}]}}}]}`)
+	if err := checkPathSafety(cfg); !errors.Is(err, derr.ErrPathUnsafe) {
+		t.Fatalf("err = %v, want ErrPathUnsafe (certificateFile outside allowed root)", err)
+	}
+}
+
+func TestCheckPathSafetyStillRejectsBadLogAccess(t *testing.T) {
+	withAllowedRoot(t, t.TempDir())
+	cfg := []byte(`{"log":{"access":"/etc/passwd"}}`)
+	if err := checkPathSafety(cfg); !errors.Is(err, derr.ErrPathUnsafe) {
+		t.Fatalf("err = %v, want ErrPathUnsafe (log.access)", err)
 	}
 }
 
