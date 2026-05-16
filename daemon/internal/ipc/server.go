@@ -29,6 +29,11 @@ type Server struct {
 	dispatch *dispatch
 	subs     *subscribers
 
+	// baseCtx is cancelled on Close; per-connection contexts derive from it
+	// so an in-flight RPC observes daemon shutdown.
+	baseCtx    context.Context
+	cancelBase context.CancelFunc
+
 	mu        sync.Mutex
 	listener  *net.UnixListener
 	listening atomic.Bool
@@ -39,7 +44,10 @@ type Server struct {
 
 type connHandle struct {
 	conn net.Conn
-	id   uint64 // subscriber id; 0 if not yet a subscriber
+	// id is the subscriber id; 0 until subscribe() returns. Read by
+	// closeBySubscriberID from the broadcast goroutine, so accesses go
+	// through atomic to satisfy the race detector.
+	id atomic.Uint64
 
 	// wmu serializes writes to conn so the reader-side response writes and
 	// the writerLoop's event writes never interleave bytes on the wire.
@@ -59,11 +67,14 @@ func (h *connHandle) write(b []byte) error {
 // NewServer constructs a server that will bind sockPath on Listen.
 // xrayInfo is used by Daemon.GetVersion (cached at startup).
 func NewServer(sockPath string, xrayInfo platform.XrayInfo, log *slog.Logger) *Server {
+	baseCtx, cancel := context.WithCancel(context.Background())
 	s := &Server{
-		sockPath: sockPath,
-		log:      log,
-		dispatch: newDispatch(xrayInfo),
-		conns:    make(map[*connHandle]struct{}),
+		sockPath:   sockPath,
+		log:        log,
+		dispatch:   newDispatch(xrayInfo),
+		conns:      make(map[*connHandle]struct{}),
+		baseCtx:    baseCtx,
+		cancelBase: cancel,
 	}
 	// onSlowClient: close the offending connection so the renderer reconnects
 	// and refetches state via Tunnel.GetStatus.
@@ -109,6 +120,7 @@ func (s *Server) Close() error {
 	var firstErr error
 	s.closeOnce.Do(func() {
 		s.StopAccept()
+		s.cancelBase()
 		s.mu.Lock()
 		conns := make([]*connHandle, 0, len(s.conns))
 		for c := range s.conns {
@@ -163,14 +175,19 @@ func (s *Server) serveConn(c *net.UnixConn) {
 	// events onto the wire. Reader handles requests serially per connection.
 	// Both writers go through handle.write, which serializes via wmu.
 	events, closed, id, unsub := s.subs.subscribe()
-	handle.id = id
+	handle.id.Store(id)
 	defer unsub()
 	go s.writerLoop(handle, events, closed)
+
+	// Per-connection context derived from the server's base context, so an
+	// in-flight RPC observes daemon shutdown (Close cancels baseCtx).
+	connCtx, cancel := context.WithCancel(s.baseCtx)
+	defer cancel()
 
 	sc := NewScanner(c)
 	for sc.Scan() {
 		line := sc.Bytes()
-		s.handleLine(handle, line)
+		s.handleLine(connCtx, handle, line)
 	}
 	if err := ScanErr(sc.Err()); err != nil && !errors.Is(err, io.EOF) {
 		if errors.Is(err, derr.ErrRequestTooLarge) {
@@ -183,7 +200,7 @@ func (s *Server) serveConn(c *net.UnixConn) {
 	}
 }
 
-func (s *Server) handleLine(h *connHandle, line []byte) {
+func (s *Server) handleLine(ctx context.Context, h *connHandle, line []byte) {
 	req, perr := DecodeRequest(line)
 	if perr != nil {
 		if b, mErr := MarshalError(json.RawMessage(`null`), derr.AsDerr(perr)); mErr == nil {
@@ -191,7 +208,7 @@ func (s *Server) handleLine(h *connHandle, line []byte) {
 		}
 		return
 	}
-	result, derrVal := s.dispatch.handle(context.Background(), req)
+	result, derrVal := s.dispatch.handle(ctx, req)
 	if derrVal != nil {
 		if b, mErr := MarshalError(req.ID, derrVal); mErr == nil {
 			_ = h.write(b)
@@ -215,6 +232,7 @@ func (s *Server) writerLoop(h *connHandle, events <-chan Event, closed <-chan st
 		case evt := <-events:
 			b, err := MarshalNotification(evt.Method, evt.Params)
 			if err != nil {
+				s.log.Warn("notification marshal failed", "method", evt.Method, "err", err)
 				continue
 			}
 			if err := h.write(b); err != nil {
@@ -243,7 +261,7 @@ func (s *Server) closeBySubscriberID(id uint64) {
 	s.mu.Lock()
 	var target *connHandle
 	for h := range s.conns {
-		if h.id == id {
+		if h.id.Load() == id {
 			target = h
 			break
 		}
