@@ -16,6 +16,7 @@ import (
 	"elepn/daemon/internal/ipc"
 	"elepn/daemon/internal/platform"
 	"elepn/daemon/internal/version"
+	"elepn/daemon/internal/xrayconfig"
 )
 
 // exitOK / exitTransient / exitUnrecoverable are the three exit codes the
@@ -45,6 +46,15 @@ func run() int {
 		sockPath = "/run/xrayd/control.sock"
 	}
 
+	cfgDir := os.Getenv("XRAYD_CONFIGS_DIR")
+	if cfgDir == "" {
+		cfgDir = "/var/lib/xrayd/configs"
+	}
+	expectedSocksAddr := os.Getenv("XRAYD_EXPECTED_SOCKS_ADDR")
+	if expectedSocksAddr == "" {
+		expectedSocksAddr = "127.0.0.1:10808"
+	}
+
 	// appCtx is signal-driven. It tells us when to START shutting down.
 	// It is NOT the actor's context; in Plan 3, the Machine will own its own
 	// ctx that is cancelled inside Machine.Shutdown AFTER cleanup completes.
@@ -67,7 +77,17 @@ func run() int {
 			"fix", "sudo groupadd --system xrayd && sudo usermod -aG xrayd $USER")
 	}
 
-	srv := ipc.NewServer(sockPath, xrayInfo, log)
+	var store *xrayconfig.Store
+	if xrayInfo.Found {
+		store = xrayconfig.NewStore(cfgDir, xrayInfo.Path, expectedSocksAddr)
+		log.Info("config registry ready",
+			"dir", cfgDir,
+			"expectedSocksAddr", expectedSocksAddr)
+	} else {
+		log.Warn("xray not found; Configs.Add will return internal_error until xray is installed")
+	}
+
+	srv := ipc.NewServer(sockPath, xrayInfo, store, log)
 	if err := srv.Listen(appCtx); err != nil {
 		log.Error("ipc listen failed", "err", err, "sock", sockPath)
 		return exitUnrecoverable

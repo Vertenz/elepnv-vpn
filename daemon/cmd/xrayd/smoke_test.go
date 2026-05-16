@@ -55,11 +55,20 @@ func TestBinaryRespondsToPing(t *testing.T) {
 		t.Fatalf("build xrayd: %v", err)
 	}
 
+	binDir := t.TempDir()
+	xrayPath := filepath.Join(binDir, "xray")
+	if err := os.WriteFile(xrayPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfgDir := t.TempDir()
+
 	sockPath := filepath.Join(tmpDir, "x.sock")
 	cmd := exec.Command(binPath)
 	cmd.Env = append(os.Environ(),
 		"XRAYD_SOCK="+sockPath,
 		"XRAYD_LOG_LEVEL=info",
+		"XRAYD_CONFIGS_DIR="+cfgDir,
+		"PATH="+binDir+":"+os.Getenv("PATH"),
 	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -96,7 +105,8 @@ func TestBinaryRespondsToPing(t *testing.T) {
 	if _, err := conn.Write([]byte(`{"jsonrpc":"2.0","id":"1","method":"Daemon.Ping"}` + "\n")); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	line, err := bufio.NewReader(conn).ReadString('\n')
+	r := bufio.NewReader(conn)
+	line, err := r.ReadString('\n')
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -110,6 +120,31 @@ func TestBinaryRespondsToPing(t *testing.T) {
 	res := parsed["result"].(map[string]any)
 	if res["ok"] != true {
 		t.Fatalf("result.ok = %v, want true", res["ok"])
+	}
+
+	// Configs.Add round-trip — proves Plan 2 dispatchers + Store are wired.
+	addReq := `{"jsonrpc":"2.0","id":"2","method":"Configs.Add","params":{"json":"` +
+		`{\"inbounds\":[{\"tag\":\"socks-in\",\"listen\":\"127.0.0.1\",\"port\":10808,` +
+		`\"protocol\":\"socks\",\"settings\":{\"auth\":\"noauth\",\"udp\":true}}]}` +
+		`"}}` + "\n"
+	if _, err := conn.Write([]byte(addReq)); err != nil {
+		t.Fatalf("write Add: %v", err)
+	}
+	addLine, err := r.ReadString('\n')
+	if err != nil {
+		t.Fatalf("read Add: %v", err)
+	}
+	var addParsed map[string]any
+	if err := json.Unmarshal([]byte(addLine), &addParsed); err != nil {
+		t.Fatalf("Add response not JSON: %v (%q)", err, addLine)
+	}
+	if addParsed["error"] != nil {
+		t.Fatalf("Configs.Add returned error: %v", addParsed["error"])
+	}
+	addRes := addParsed["result"].(map[string]any)
+	id, _ := addRes["id"].(string)
+	if len(id) != 26 {
+		t.Fatalf("ULID length = %d, want 26 (got %q)", len(id), id)
 	}
 
 	// SIGTERM and confirm exit. Budget 5s — shutdown is fast on a quiet host
