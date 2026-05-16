@@ -37,15 +37,23 @@ type Config struct {
 }
 
 // Health owns the probe scheduler and the broadcast fan-out for State.Changed.
-// Concurrency model: the enabled flag is atomic; the in-flight loop cancellation
-// is via atomic.Pointer[context.CancelFunc]; the status snapshot + subscriber
-// map are guarded by mu.
+// Concurrency model:
+//   - enableMu serializes SetEnabled calls to prevent TOCTOU double-spawn.
+//   - The enabled flag is atomic (fast read path for IsEnabled / Probe).
+//   - The in-flight loop cancellation is via atomic.Pointer[context.CancelFunc].
+//   - The status snapshot + subscriber map are guarded by mu.
+//   - baseCtx/baseCancel give the probe loop a daemon-lifecycle lifetime that
+//     is independent of any IPC request context.
 type Health struct {
 	cfg        Config
 	log        *slog.Logger
 	cli        *http.Client
 	enabled    atomic.Bool
 	cancelLoop atomic.Pointer[context.CancelFunc]
+
+	enableMu   sync.Mutex         // serializes SetEnabled — prevents TOCTOU double-spawn
+	baseCtx    context.Context    // daemon-lifecycle ctx; probe loop derives from this
+	baseCancel context.CancelFunc // cancelled by Close
 
 	mu     sync.RWMutex
 	status Status
@@ -81,13 +89,22 @@ func New(cfg Config, log *slog.Logger) *Health {
 		DisableKeepAlives:  true,
 		DisableCompression: true,
 	}
+	baseCtx, baseCancel := context.WithCancel(context.Background())
 	return &Health{
-		cfg:    cfg,
-		log:    log,
-		cli:    &http.Client{Transport: tr, Timeout: 3 * time.Second},
-		status: Status{Health: StateUnknown},
-		subs:   make(map[uint64]chan Status),
+		cfg:        cfg,
+		log:        log,
+		cli:        &http.Client{Transport: tr, Timeout: 3 * time.Second},
+		baseCtx:    baseCtx,
+		baseCancel: baseCancel,
+		status:     Status{Health: StateUnknown},
+		subs:       make(map[uint64]chan Status),
 	}
+}
+
+// Close cancels the probe loop (if running) and the base ctx. Idempotent.
+// Call from daemon shutdown after SetEnabled(false).
+func (h *Health) Close() {
+	h.baseCancel()
 }
 
 func (h *Health) GetConfig() Config { return h.cfg }
@@ -100,16 +117,23 @@ func (h *Health) GetStatus() Status {
 
 func (h *Health) IsEnabled() bool { return h.enabled.Load() }
 
-// SetEnabled (true) starts the periodic loop using parent as its base ctx;
-// (false) cancels the loop and posts Unknown to subscribers. No-op if the
-// requested state matches current state.
-func (h *Health) SetEnabled(parent context.Context, enabled bool) {
+// SetEnabled (true) starts the periodic probe loop; (false) cancels it and
+// posts Unknown to subscribers. The parent ctx parameter is intentionally
+// ignored for the loop's lifetime — the loop derives from h.baseCtx (a
+// daemon-lifecycle context) so it survives IPC request/connection teardown.
+// The parameter is retained for API compatibility with the HealthMachine
+// interface declared in ipc/events.go.
+//
+// Concurrent calls are serialized by enableMu to prevent TOCTOU double-spawn.
+func (h *Health) SetEnabled(_ context.Context, enabled bool) {
+	h.enableMu.Lock()
+	defer h.enableMu.Unlock()
 	if enabled == h.enabled.Load() {
 		return
 	}
 	h.enabled.Store(enabled)
 	if enabled {
-		ctx, cancel := context.WithCancel(parent)
+		ctx, cancel := context.WithCancel(h.baseCtx)
 		h.cancelLoop.Store(&cancel)
 		go h.loop(ctx)
 		return
@@ -133,9 +157,16 @@ func (h *Health) Probe(ctx context.Context) (Status, error) {
 	return s, nil
 }
 
-// Subscribe returns a per-client buffered channel (cap 4); the returned func
-// unsubscribes and closes the channel. Sends are non-blocking — a slow client
-// silently drops events (mirrors state.Subscribers' policy).
+// Subscribe returns a per-client buffered channel (cap 4) for Status updates.
+// Sends are non-blocking — a slow client silently drops events (mirrors
+// state.Subscribers' policy).
+//
+// The returned unsub func removes the channel from the broadcast map but does
+// NOT close it. update() snapshots the map under mu, then sends outside the
+// lock; closing the channel from unsub would race with those out-of-lock sends
+// and cause a send-on-closed-channel panic. After calling unsub the caller
+// should stop reading from ch; the channel will be GC'd when both sides drop
+// their references.
 func (h *Health) Subscribe() (<-chan Status, func()) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -146,10 +177,9 @@ func (h *Health) Subscribe() (<-chan Status, func()) {
 	return ch, func() {
 		h.mu.Lock()
 		defer h.mu.Unlock()
-		if c, ok := h.subs[id]; ok {
-			close(c)
-			delete(h.subs, id)
-		}
+		delete(h.subs, id)
+		// Do NOT close ch — update() may still hold a snapshot reference and
+		// send to it outside the lock.
 	}
 }
 

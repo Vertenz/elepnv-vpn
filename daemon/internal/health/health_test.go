@@ -148,9 +148,10 @@ func TestSetEnabledStartsAndCancelsLoop(t *testing.T) {
 
 func TestSubscribeUnsubscribeIsIdempotent(t *testing.T) {
 	h := New(Config{SocksAddr: "x"}, discardLog())
+	defer h.Close()
 	_, unsub := h.Subscribe()
 	unsub()
-	unsub() // must not panic / double-close
+	unsub() // must not panic — delete on absent key is a no-op
 }
 
 // TestProbeRunsWhenEnabled is intentionally minimal — exhaustive HTTP
@@ -171,6 +172,105 @@ func TestProbeRunsWhenEnabled(t *testing.T) {
 	}
 	if s.Health == StateUnknown {
 		t.Fatalf("Probe returned Unknown; expected Online/Degraded/Offline")
+	}
+}
+
+// TestSetEnabledLoopSurvivesParentCtxCancel verifies that the probe loop is
+// tied to h.baseCtx (daemon lifecycle) and not to the parent ctx passed to
+// SetEnabled. Cancelling the parent must NOT kill the loop.
+func TestSetEnabledLoopSurvivesParentCtxCancel(t *testing.T) {
+	addr := fakeSocksAcceptor(t)
+	h := New(Config{SocksAddr: addr, IntervalSeconds: 5}, discardLog())
+	defer h.Close()
+
+	ch, unsub := h.Subscribe()
+	defer unsub()
+
+	// Pass a parent ctx that we immediately cancel — simulating the IPC
+	// connection closing after the renderer sent SetEnabled(true).
+	parentCtx, parentCancel := context.WithCancel(context.Background())
+	h.SetEnabled(parentCtx, true)
+	parentCancel()
+
+	// The probe loop must still be running — it derives from h.baseCtx,
+	// not from the parent ctx.
+	select {
+	case ev := <-ch:
+		if ev.Health == StateUnknown {
+			t.Fatalf("first broadcast Unknown — loop died with parent ctx")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("loop died when parent ctx was cancelled")
+	}
+	if !h.IsEnabled() {
+		t.Fatal("IsEnabled false after parent ctx cancelled")
+	}
+}
+
+// TestSubscribeUnsubDoesNotCloseChannel verifies that calling unsub does NOT
+// close the data channel. Closing it would race with update()'s out-of-lock
+// send and cause a send-on-closed-channel panic.
+func TestSubscribeUnsubDoesNotCloseChannel(t *testing.T) {
+	h := New(Config{SocksAddr: "x"}, discardLog())
+	defer h.Close()
+	ch, unsub := h.Subscribe()
+	unsub()
+	// After unsub the channel must NOT be closed — reading should block.
+	select {
+	case _, ok := <-ch:
+		if !ok {
+			t.Fatal("channel was closed by unsub; that breaks update()'s lock-free send")
+		}
+		t.Fatal("unexpected value on channel after unsub")
+	case <-time.After(50 * time.Millisecond):
+		// expected — channel still open, nothing pending
+	}
+}
+
+// TestUpdateConcurrentWithUnsubDoesNotPanic stresses simultaneous unsub and
+// broadcast to confirm no send-on-closed-channel panic.
+func TestUpdateConcurrentWithUnsubDoesNotPanic(t *testing.T) {
+	h := New(Config{SocksAddr: "x"}, discardLog())
+	defer h.Close()
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		ch, unsub := h.Subscribe()
+		wg.Add(2)
+		go func() { defer wg.Done(); unsub() }()
+		go func() { defer wg.Done(); h.update(Status{Health: StateOnline}); _ = ch }()
+	}
+	wg.Wait()
+	// No panic = pass.
+}
+
+// TestSetEnabledConcurrentCallsDoNotDoubleSpawn verifies that concurrent
+// SetEnabled(true) calls serialize via enableMu and spawn at most one loop.
+func TestSetEnabledConcurrentCallsDoNotDoubleSpawn(t *testing.T) {
+	addr := fakeSocksAcceptor(t)
+	h := New(Config{SocksAddr: addr, IntervalSeconds: 5}, discardLog())
+	defer h.Close()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); h.SetEnabled(context.Background(), true) }()
+	}
+	wg.Wait()
+
+	h.SetEnabled(context.Background(), false)
+
+	// Give the cancelled goroutine time to exit.
+	time.Sleep(100 * time.Millisecond)
+
+	// Subscribe AFTER disable — no further broadcasts should arrive if only
+	// one loop was running (a leaked duplicate would still send events).
+	ch, unsub := h.Subscribe()
+	defer unsub()
+	select {
+	case ev := <-ch:
+		t.Fatalf("unexpected event after disable: %v — duplicate loop may have survived", ev)
+	case <-time.After(300 * time.Millisecond):
+		// expected — no loop running
 	}
 }
 

@@ -183,6 +183,7 @@ func run() int {
 	}
 
 	healthMon.SetEnabled(context.Background(), false)
+	healthMon.Close()
 
 	if err := srv.Close(); err != nil {
 		log.Warn("ipc server close error", "err", err)
