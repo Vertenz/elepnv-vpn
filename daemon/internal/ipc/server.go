@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"os"
@@ -411,6 +412,9 @@ func bindControlSocket(sockPath string, log *slog.Logger) (*net.UnixListener, er
 	addr := &net.UnixAddr{Name: sockPath, Net: "unix"}
 	l, err := net.ListenUnix("unix", addr)
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("listen %s: %w (hint: run under systemd with RuntimeDirectory=xrayd, or set XRAYD_SOCK to a path whose parent dir exists)", sockPath, err)
+		}
 		return nil, fmt.Errorf("listen %s: %w", sockPath, err)
 	}
 	if err := os.Chmod(sockPath, 0o660); err != nil {
