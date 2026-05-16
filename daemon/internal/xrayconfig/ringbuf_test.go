@@ -46,3 +46,20 @@ func TestRingBufHandlesSingleHugeWrite(t *testing.T) {
 		t.Fatalf("String() = %q, want xEND", got)
 	}
 }
+
+func TestRingBufMixedBranchExtendsSliceSafely(t *testing.T) {
+	// Trigger the mixed branch: under-cap first write, then a second write
+	// that overflows but is itself smaller than cap. Earlier impl could
+	// panic here because the byte loop indexed past len(r.buf).
+	// Total bytes written: "abc" + "defg" = 7; cap = 6 → keep last 6 = "bcdefg".
+	rb := newRingBuf(6)
+	if _, err := rb.Write([]byte("abc")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rb.Write([]byte("defg")); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := rb.String(), "bcdefg"; got != want {
+		t.Fatalf("String() = %q, want %q", got, want)
+	}
+}

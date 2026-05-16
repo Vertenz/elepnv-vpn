@@ -38,17 +38,22 @@ func (r *ringBuf) Write(p []byte) (int, error) {
 		}
 		return wrote, nil
 	}
-	// Mixed case: partially fill, then overwrite from the start.
+	// Mixed case: some existing bytes fit, the rest are overwritten.
+	// We keep the last (r.cap - len(p)) existing bytes and place them at the
+	// END of the buffer so the new bytes p can occupy positions 0..len(p)-1.
+	// That gives the correct ring layout where String() returns the last r.cap
+	// bytes in chronological order.
+	//
+	// newRingBuf always does make([]byte, 0, cap), so cap(r.buf) == r.cap; we
+	// extend the slice to its full capacity before doing any indexed writes so
+	// that all index operations are in-range.
 	r.full = true
-	if cap(r.buf) < r.cap {
-		grown := make([]byte, r.cap)
-		copy(grown, r.buf)
-		r.buf = grown[:r.cap]
-	}
-	for _, b := range p {
-		r.buf[r.pos] = b
-		r.pos = (r.pos + 1) % r.cap
-	}
+	keep := r.cap - len(p)              // how many existing bytes survive
+	existing := r.buf[len(r.buf)-keep:] // the surviving tail of what was written
+	r.buf = r.buf[:r.cap]
+	copy(r.buf[len(p):], existing)
+	copy(r.buf[:len(p)], p)
+	r.pos = len(p)
 	return wrote, nil
 }
 
