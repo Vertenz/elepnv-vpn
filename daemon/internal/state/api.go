@@ -108,6 +108,28 @@ func (m *Machine) Disconnect(ctx context.Context) error {
 	}
 }
 
+// Switch atomically rotates the active config.
+//
+//   - Disconnected/Error  → behaves like Connect(id).
+//   - Already on id       → no-op, returns nil.
+//   - Disconnecting       → rejected with ErrAlreadyConnected (caller should retry later).
+//   - Connected/Connecting/Validating on a different id → triggers Disconnect
+//     then Connect, with the new Connect deferred until the cleanup completes.
+//     The caller receives nil immediately; the final state arrives via State.Changed
+//     events (Disconnecting → Disconnected → Validating → … → Connected).
+func (m *Machine) Switch(ctx context.Context, id xrayconfig.ULID) error {
+	reply := make(chan error, 1)
+	if !m.postCmd(cmdSwitch{id: id, reply: reply}) {
+		return derr.ErrDaemonShuttingDown
+	}
+	select {
+	case err := <-reply:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // GetStatus returns the current snapshot (actor-synchronous via cmdGetStatus).
 func (m *Machine) GetStatus(ctx context.Context) Status {
 	reply := make(chan Status, 1)

@@ -79,6 +79,11 @@ type cmdDisconnectDone struct {
 	gen int64
 }
 
+type cmdSwitch struct {
+	id    xrayconfig.ULID
+	reply chan error
+}
+
 type cmdAutoRevert struct{}
 
 type cmdChildExit struct {
@@ -98,6 +103,7 @@ func (cmdDisconnect) isCommand()      {}
 func (cmdConnectProgress) isCommand() {}
 func (cmdConnectDone) isCommand()     {}
 func (cmdDisconnectDone) isCommand()  {}
+func (cmdSwitch) isCommand()          {}
 func (cmdAutoRevert) isCommand()      {}
 func (cmdChildExit) isCommand()       {}
 func (cmdGetStatus) isCommand()       {}
@@ -117,7 +123,7 @@ type connectResult struct {
 // like GetStatus do NOT cancel a pending Error → Disconnected timer.
 func shouldCancelAutoRevert(cmd command) bool {
 	switch cmd.(type) {
-	case cmdConnect, cmdDisconnect, cmdAutoRevert, cmdChildExit, cmdShutdown:
+	case cmdConnect, cmdDisconnect, cmdSwitch, cmdAutoRevert, cmdChildExit, cmdShutdown:
 		return true
 	default:
 		return false

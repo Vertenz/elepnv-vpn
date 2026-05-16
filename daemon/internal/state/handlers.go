@@ -50,6 +50,42 @@ func (m *Machine) handleConnectProgress(c cmdConnectProgress) {
 	}
 }
 
+func (m *Machine) handleSwitch(c cmdSwitch) {
+	// Reject during Disconnecting — would require queuing logic v1 doesn't have.
+	// The renderer should observe Disconnecting state and rate-limit its calls.
+	if m.state.State == StateDisconnecting {
+		c.reply <- derr.ErrAlreadyConnected
+		return
+	}
+	// Disconnected/Error: behave exactly like Connect.
+	if m.state.State == StateDisconnected || m.state.State == StateError {
+		m.handleConnect(cmdConnect{id: c.id, reply: c.reply})
+		return
+	}
+	// Already on the target config — no-op.
+	if m.activeID == c.id {
+		c.reply <- nil
+		return
+	}
+	// Connected/Connecting/Validating on a different config: trigger disconnect
+	// and queue the connect for when it completes. Reply nil to caller now;
+	// the final state flows via State.Changed events
+	// (Disconnecting → Disconnected → Validating → … → Connected).
+	//
+	// Flow:
+	//   handleSwitch → handleDisconnect (posts Disconnecting, spawns cleanup goroutine)
+	//   cleanup goroutine → cmdDisconnectDone / stale cmdConnectDone
+	//   handleDisconnectDone / stale handleConnectDone → sees pendingSwitchID → handleConnect
+	//
+	// Note: pendingSwitchID is set AFTER handleDisconnect because handleDisconnect
+	// clears it (to cancel any prior pending switch on a user-initiated Disconnect).
+	discardReply := make(chan error, 1)
+	m.handleDisconnect(cmdDisconnect{reply: discardReply})
+	<-discardReply // synchronous on actor; drains the buffered reply immediately
+	m.pendingSwitchID = c.id
+	c.reply <- nil
+}
+
 func (m *Machine) handleConnectDone(c cmdConnectDone) {
 	if c.gen != m.opGen {
 		if c.result.cleanup != nil {
@@ -60,6 +96,16 @@ func (m *Machine) handleConnectDone(c cmdConnectDone) {
 			m.childExitCC = nil
 			m.activeID = xrayconfig.ULID{}
 			m.postState(ConnStatus{State: StateDisconnected, Since: time.Now()})
+			// Stale-gen path: a Validating/Connecting worker was cancelled via
+			// handleDisconnect (which bumped opGen). Consume pendingSwitchID now
+			// that we've posted Disconnected.
+			if m.pendingSwitchID != (xrayconfig.ULID{}) {
+				id := m.pendingSwitchID
+				m.pendingSwitchID = xrayconfig.ULID{}
+				discardReply := make(chan error, 1)
+				m.handleConnect(cmdConnect{id: id, reply: discardReply})
+				<-discardReply
+			}
 		}
 		return
 	}
@@ -103,6 +149,14 @@ func (m *Machine) handleConnectDone(c cmdConnectDone) {
 }
 
 func (m *Machine) handleDisconnect(c cmdDisconnect) {
+	// An explicit Disconnect cancels any pending Switch. Without this, a
+	// Disconnect(user) followed by the cleanup posting Disconnected would
+	// immediately re-connect to the old pendingSwitchID — surprising behavior.
+	// handleSwitch sets pendingSwitchID before calling handleDisconnect, so
+	// we only clear it here when the caller is not handleSwitch itself (i.e.
+	// when this is a real user-initiated disconnect that should override a Switch).
+	// We achieve this by always clearing: handleSwitch re-sets it right after.
+	m.pendingSwitchID = xrayconfig.ULID{}
 	switch m.state.State {
 	case StateDisconnected:
 		c.reply <- derr.ErrNotConnected
@@ -159,6 +213,14 @@ func (m *Machine) handleDisconnectDone(c cmdDisconnectDone) {
 	m.childExitCC = nil
 	m.activeID = xrayconfig.ULID{}
 	m.postState(ConnStatus{State: StateDisconnected, Since: time.Now()})
+	// If a Switch was queued while Connected, kick the deferred connect now.
+	if m.pendingSwitchID != (xrayconfig.ULID{}) {
+		id := m.pendingSwitchID
+		m.pendingSwitchID = xrayconfig.ULID{}
+		discardReply := make(chan error, 1)
+		m.handleConnect(cmdConnect{id: id, reply: discardReply})
+		<-discardReply // synchronous on actor; drains immediately
+	}
 }
 
 func (m *Machine) handleChildExit(exit supervisor.Exit) {
@@ -219,6 +281,7 @@ func (m *Machine) handleShutdown(c cmdShutdown) {
 	m.child = nil
 	m.childExitCC = nil
 	m.activeID = xrayconfig.ULID{}
+	m.pendingSwitchID = xrayconfig.ULID{} // discard any queued switch on shutdown
 	m.cancelAutoRevert()
 
 	if m.state.State != StateDisconnected {

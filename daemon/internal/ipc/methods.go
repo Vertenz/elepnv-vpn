@@ -52,8 +52,10 @@ func newDispatch(xrayInfo platform.XrayInfo, store *xrayconfig.Store, bcast Broa
 	d.methods["Configs.List"] = d.handleConfigsList
 	d.methods["Configs.Remove"] = d.handleConfigsRemove
 	d.methods["Configs.Validate"] = d.handleConfigsValidate
+	d.methods["Configs.Get"] = d.handleConfigsGet
 	d.methods["Tunnel.Connect"] = d.handleTunnelConnect
 	d.methods["Tunnel.Disconnect"] = d.handleTunnelDisconnect
+	d.methods["Tunnel.Switch"] = d.handleTunnelSwitch
 	d.methods["Tunnel.GetStatus"] = d.handleTunnelGetStatus
 	d.methods["Health.SetEnabled"] = d.handleHealthSetEnabled
 	d.methods["Health.Probe"] = d.handleHealthProbe
@@ -224,6 +226,39 @@ type validateParams struct {
 	ID string `json:"id"`
 }
 
+type getParams struct {
+	ID string `json:"id"`
+}
+
+type getResult struct {
+	JSON string `json:"json"`
+}
+
+func (d *dispatch) handleConfigsGet(_ context.Context, raw json.RawMessage) (any, *derr.Error) {
+	if !d.xrayInfo.Found {
+		return nil, derr.ErrXrayNotFound
+	}
+	if d.configs == nil {
+		return nil, derr.ErrInternal.WithMessage("config store not wired")
+	}
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, derr.ErrInvalidParams.WithMessage("Configs.Get requires {id: string}")
+	}
+	var p getParams
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return nil, derr.ErrInvalidParams.With(err)
+	}
+	id, err := xrayconfig.ParseULID(p.ID)
+	if err != nil {
+		return nil, asDerrOrInternal(err)
+	}
+	body, err := d.configs.Get(id)
+	if err != nil {
+		return nil, asDerrOrInternal(err)
+	}
+	return getResult{JSON: body}, nil
+}
+
 func (d *dispatch) handleConfigsValidate(ctx context.Context, raw json.RawMessage) (any, *derr.Error) {
 	if !d.xrayInfo.Found {
 		return nil, derr.ErrXrayNotFound
@@ -293,6 +328,37 @@ func (d *dispatch) handleTunnelConnect(ctx context.Context, raw json.RawMessage)
 		return nil, asDerrOrInternal(err)
 	}
 	return tunnelStateResult{State: state.StateValidating}, nil
+}
+
+func (d *dispatch) handleTunnelSwitch(ctx context.Context, raw json.RawMessage) (any, *derr.Error) {
+	if !d.xrayInfo.Found {
+		return nil, derr.ErrXrayNotFound
+	}
+	if d.machine == nil {
+		return nil, derr.ErrInternal.WithMessage("tunnel machine not wired")
+	}
+	if rate, ok := ctx.Value(ctxKeyConnRate{}).(*tokenBucket); ok && rate != nil {
+		if !rate.take() {
+			return nil, derr.ErrRateLimited
+		}
+	}
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, derr.ErrInvalidParams.WithMessage("Tunnel.Switch requires {id: string}")
+	}
+	var p tunnelConnectParams // reuse {id: string} struct
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return nil, derr.ErrInvalidParams.With(err)
+	}
+	id, err := xrayconfig.ParseULID(p.ID)
+	if err != nil {
+		return nil, asDerrOrInternal(err)
+	}
+	if err := d.machine.Switch(ctx, id); err != nil {
+		return nil, asDerrOrInternal(err)
+	}
+	// Return the immediate post-switch state. The final outcome (Connected to
+	// the new config) flows via State.Changed events.
+	return tunnelStateResult{State: string(d.machine.GetStatus(ctx).Conn.State)}, nil
 }
 
 func (d *dispatch) handleTunnelDisconnect(ctx context.Context, _ json.RawMessage) (any, *derr.Error) {

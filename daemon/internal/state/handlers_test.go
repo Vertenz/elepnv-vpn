@@ -108,6 +108,72 @@ func TestHandleConnectDoneMapsDeadlineExceededToConnectTimeout(t *testing.T) {
 	}
 }
 
+func TestHandleSwitchFromDisconnectedBehavesLikeConnect(t *testing.T) {
+	m := newTestMachine(t)
+	// Stop the actor before calling handleSwitch so we can call it synchronously
+	// without the worker goroutine nil-derefing deps.cfgs.
+	// Pattern mirrors TestHandleConnectAcceptsFromDisconnected.
+	m.Start()
+	m.cancel()
+	<-m.doneCh
+
+	reply := make(chan error, 1)
+	id, _ := xrayconfig.ParseULID("01HX7N9KQ8R3JCBVB6Z3K9V4FK")
+	m.handleSwitch(cmdSwitch{id: id, reply: reply})
+	if err := <-reply; err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	if m.state.State != StateValidating {
+		t.Fatalf("state = %q, want Validating", m.state.State)
+	}
+}
+
+func TestHandleSwitchToSameConfigIsNoop(t *testing.T) {
+	m := newTestMachine(t)
+	id, _ := xrayconfig.ParseULID("01HX7N9KQ8R3JCBVB6Z3K9V4FK")
+	m.state = ConnStatus{State: StateConnected, ConfigID: id.String()}
+	m.activeID = id
+
+	reply := make(chan error, 1)
+	m.handleSwitch(cmdSwitch{id: id, reply: reply})
+	if err := <-reply; err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	if m.state.State != StateConnected {
+		t.Fatalf("state changed to %q on no-op switch", m.state.State)
+	}
+}
+
+func TestHandleSwitchRejectedDuringDisconnecting(t *testing.T) {
+	m := newTestMachine(t)
+	m.state = ConnStatus{State: StateDisconnecting}
+
+	reply := make(chan error, 1)
+	id, _ := xrayconfig.ParseULID("01HX7N9KQ8R3JCBVB6Z3K9V4FK")
+	m.handleSwitch(cmdSwitch{id: id, reply: reply})
+	if err := <-reply; !errors.Is(err, derr.ErrAlreadyConnected) {
+		t.Fatalf("err = %v, want ErrAlreadyConnected", err)
+	}
+}
+
+func TestHandleSwitchFromErrorBehavesLikeConnect(t *testing.T) {
+	m := newTestMachine(t)
+	m.Start()
+	m.cancel()
+	<-m.doneCh
+
+	m.state = ConnStatus{State: StateError}
+	id, _ := xrayconfig.ParseULID("01HX7N9KQ8R3JCBVB6Z3K9V4FK")
+	reply := make(chan error, 1)
+	m.handleSwitch(cmdSwitch{id: id, reply: reply})
+	if err := <-reply; err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	if m.state.State != StateValidating {
+		t.Fatalf("state = %q, want Validating", m.state.State)
+	}
+}
+
 func TestAutoRevertFiresFromErrorToDisconnected(t *testing.T) {
 	m := newTestMachine(t)
 	m.Start()

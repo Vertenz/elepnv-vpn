@@ -241,6 +241,8 @@ type fakeMachine struct {
 	connectErr      error
 	disconnectCalls int
 	disconnectErr   error
+	switchCalls     []xrayconfig.ULID
+	switchErr       error
 	status          state.Status
 	isActive        bool
 	subsCh          chan state.ConnStatus
@@ -253,6 +255,10 @@ func (f *fakeMachine) Connect(_ context.Context, id xrayconfig.ULID) error {
 func (f *fakeMachine) Disconnect(_ context.Context) error {
 	f.disconnectCalls++
 	return f.disconnectErr
+}
+func (f *fakeMachine) Switch(_ context.Context, id xrayconfig.ULID) error {
+	f.switchCalls = append(f.switchCalls, id)
+	return f.switchErr
 }
 func (f *fakeMachine) GetStatus(_ context.Context) state.Status { return f.status }
 func (f *fakeMachine) IsActive(_ xrayconfig.ULID) bool          { return f.isActive }
@@ -377,6 +383,97 @@ func TestConfigsRemoveReturnsXrayNotFoundWhenXrayMissing(t *testing.T) {
 	_, derrVal := d.handle(context.Background(), Request{Method: "Configs.Remove", Params: params})
 	if !errors.Is(derrVal, derr.ErrXrayNotFound) {
 		t.Fatalf("err = %v, want ErrXrayNotFound", derrVal)
+	}
+}
+
+// --- Configs.Get tests ---
+
+func TestConfigsGetReturnsXrayNotFoundWhenXrayMissing(t *testing.T) {
+	d := newDispatch(platform.XrayInfo{Found: false}, nil, &recorderBroadcaster{}, nil, nil)
+	params, _ := json.Marshal(map[string]any{"id": "01HX7N9KQ8R3JCBVB6Z3K9V4FK"})
+	_, derrVal := d.handle(context.Background(), Request{Method: "Configs.Get", Params: params})
+	if !errors.Is(derrVal, derr.ErrXrayNotFound) {
+		t.Fatalf("err = %v, want ErrXrayNotFound", derrVal)
+	}
+}
+
+func TestConfigsGetReturnsConfigUnknownForUnknownULID(t *testing.T) {
+	store := newStoreWithFakeXray(t)
+	d := newDispatch(platform.XrayInfo{Found: true}, store, &recorderBroadcaster{}, nil, nil)
+	params, _ := json.Marshal(map[string]any{"id": "01HX7N9KQ8R3JCBVB6Z3K9V4FK"})
+	_, derrVal := d.handle(context.Background(), Request{Method: "Configs.Get", Params: params})
+	if !errors.Is(derrVal, derr.ErrConfigUnknown) {
+		t.Fatalf("err = %v, want ErrConfigUnknown", derrVal)
+	}
+}
+
+func TestConfigsGetReturnsJSONForExistingID(t *testing.T) {
+	store := newStoreWithFakeXray(t)
+	rec := &recorderBroadcaster{}
+	d := newDispatch(platform.XrayInfo{Found: true}, store, rec, nil, nil)
+
+	addParams, _ := json.Marshal(map[string]any{"json": validCfg})
+	addRes, _ := d.handle(context.Background(), Request{Method: "Configs.Add", Params: addParams})
+	id := addRes.(addResult).ID
+
+	getParams, _ := json.Marshal(map[string]any{"id": id})
+	res, derrVal := d.handle(context.Background(), Request{Method: "Configs.Get", Params: getParams})
+	if derrVal != nil {
+		t.Fatalf("Configs.Get err: %v", derrVal)
+	}
+	got := res.(getResult)
+	if got.JSON != validCfg {
+		t.Fatalf("Configs.Get JSON = %q, want %q", got.JSON, validCfg)
+	}
+}
+
+// --- Tunnel.Switch IPC tests ---
+
+func TestTunnelSwitchAcceptedReturnsState(t *testing.T) {
+	fm := &fakeMachine{
+		status: state.Status{Conn: state.ConnStatus{State: state.StateValidating}},
+	}
+	d := newDispatch(platform.XrayInfo{Found: true}, nil, &recorderBroadcaster{}, fm, nil)
+	params, _ := json.Marshal(map[string]any{"id": "01HX7N9KQ8R3JCBVB6Z3K9V4FK"})
+	res, derrVal := d.handle(context.Background(), Request{Method: "Tunnel.Switch", Params: params})
+	if derrVal != nil {
+		t.Fatalf("err = %v", derrVal)
+	}
+	got := res.(tunnelStateResult)
+	if got.State != state.StateValidating {
+		t.Fatalf("State = %q, want Validating", got.State)
+	}
+	if len(fm.switchCalls) != 1 {
+		t.Fatalf("expected 1 Switch call, got %d", len(fm.switchCalls))
+	}
+}
+
+func TestTunnelSwitchReturnsXrayNotFoundWhenXrayMissing(t *testing.T) {
+	fm := &fakeMachine{}
+	d := newDispatch(platform.XrayInfo{Found: false}, nil, &recorderBroadcaster{}, fm, nil)
+	params, _ := json.Marshal(map[string]any{"id": "01HX7N9KQ8R3JCBVB6Z3K9V4FK"})
+	_, derrVal := d.handle(context.Background(), Request{Method: "Tunnel.Switch", Params: params})
+	if !errors.Is(derrVal, derr.ErrXrayNotFound) {
+		t.Fatalf("err = %v, want ErrXrayNotFound", derrVal)
+	}
+}
+
+func TestTunnelSwitchSurfacesAlreadyConnected(t *testing.T) {
+	fm := &fakeMachine{switchErr: derr.ErrAlreadyConnected}
+	d := newDispatch(platform.XrayInfo{Found: true}, nil, &recorderBroadcaster{}, fm, nil)
+	params, _ := json.Marshal(map[string]any{"id": "01HX7N9KQ8R3JCBVB6Z3K9V4FK"})
+	_, derrVal := d.handle(context.Background(), Request{Method: "Tunnel.Switch", Params: params})
+	if !errors.Is(derrVal, derr.ErrAlreadyConnected) {
+		t.Fatalf("err = %v, want ErrAlreadyConnected", derrVal)
+	}
+}
+
+func TestTunnelSwitchRejectsMissingParams(t *testing.T) {
+	fm := &fakeMachine{}
+	d := newDispatch(platform.XrayInfo{Found: true}, nil, &recorderBroadcaster{}, fm, nil)
+	_, derrVal := d.handle(context.Background(), Request{Method: "Tunnel.Switch", Params: nil})
+	if !errors.Is(derrVal, derr.ErrInvalidParams) {
+		t.Fatalf("err = %v, want ErrInvalidParams", derrVal)
 	}
 }
 

@@ -25,14 +25,15 @@ type Machine struct {
 	subs *Subscribers
 
 	// Actor-only fields — only read/written inside run().
-	state         ConnStatus
-	armed         *cleanupStack
-	child         *supervisor.Child
-	childExitCC   <-chan struct{}
-	activeID      xrayconfig.ULID
-	cancelConnect context.CancelFunc
-	autoRevert    *time.Timer
-	opGen         int64
+	state           ConnStatus
+	armed           *cleanupStack
+	child           *supervisor.Child
+	childExitCC     <-chan struct{}
+	activeID        xrayconfig.ULID
+	cancelConnect   context.CancelFunc
+	autoRevert      *time.Timer
+	opGen           int64
+	pendingSwitchID xrayconfig.ULID // non-zero when a Switch is awaiting Disconnect completion
 
 	cmds         chan command
 	shutdownOnce sync.Once
@@ -134,6 +135,8 @@ func (m *Machine) handle(cmd command) {
 		m.handleConnect(c)
 	case cmdDisconnect:
 		m.handleDisconnect(c)
+	case cmdSwitch:
+		m.handleSwitch(c)
 	case cmdConnectProgress:
 		m.handleConnectProgress(c)
 	case cmdConnectDone:
@@ -200,6 +203,8 @@ func replyShuttingDown(cmd command) {
 	case cmdConnect:
 		c.reply <- derr.ErrDaemonShuttingDown
 	case cmdDisconnect:
+		c.reply <- derr.ErrDaemonShuttingDown
+	case cmdSwitch:
 		c.reply <- derr.ErrDaemonShuttingDown
 	case cmdGetStatus:
 		// Best-effort: send zero Status. The channel is cap-1 so this is

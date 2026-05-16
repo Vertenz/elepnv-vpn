@@ -461,4 +461,82 @@ func TestFullRPCCatalogCallable(t *testing.T) {
 		// Non-disabled error (e.g. network unreachable) is acceptable.
 		t.Logf("Health.Probe returned non-disabled error (acceptable in offline env): %v", hpResp["error"])
 	}
+
+	// Configs.Get — verify the stored JSON is retrievable.
+	getResp := rpcCall(t, r, conn, "15", "Configs.Get", map[string]any{"id": id})
+	if getResp["error"] != nil {
+		t.Fatalf("Configs.Get error: %v", getResp["error"])
+	}
+	if getResp["result"] == nil {
+		t.Fatal("Configs.Get returned nil result")
+	}
+	if getRes, ok := getResp["result"].(map[string]any); !ok || getRes["json"] == "" {
+		t.Fatalf("Configs.Get result.json is empty: %v", getResp["result"])
+	}
+}
+
+// TestTunnelSwitchFromConnectedToOtherConfig verifies the Tunnel.Switch RPC:
+// connect to config A, then switch to B and observe Connected with configID==B.
+func TestTunnelSwitchFromConnectedToOtherConfig(t *testing.T) {
+	requireLinux(t)
+	requireXraydGroup(t)
+	fakexray := buildFakexray(t)
+	binPath := buildXrayd(t)
+	sockPath := filepath.Join(t.TempDir(), "x.sock")
+	socksAddr := "127.0.0.1:10811"
+	cmd := startDaemon(t, startEnv{
+		binPath:      binPath,
+		sockPath:     sockPath,
+		cfgDir:       t.TempDir(),
+		stateDir:     t.TempDir(),
+		fakexrayPath: fakexray,
+		socksAddr:    socksAddr,
+	})
+	t.Cleanup(func() { _ = cmd.Process.Signal(syscall.SIGTERM); _, _ = cmd.Process.Wait() })
+	waitForSocket(t, sockPath, 3*time.Second)
+
+	conn, r := dialDaemon(t, sockPath)
+	defer conn.Close()
+
+	// Add two configs.
+	addA := rpcCall(t, r, conn, "1", "Configs.Add",
+		map[string]any{"json": string(acceptableConfig(10811))})
+	if addA["error"] != nil {
+		t.Fatalf("Configs.Add A: %v", addA["error"])
+	}
+	idA := addA["result"].(map[string]any)["id"].(string)
+
+	addB := rpcCall(t, r, conn, "2", "Configs.Add",
+		map[string]any{"json": string(acceptableConfig(10811))})
+	if addB["error"] != nil {
+		t.Fatalf("Configs.Add B: %v", addB["error"])
+	}
+	idB := addB["result"].(map[string]any)["id"].(string)
+
+	// Connect to A.
+	connectResp := rpcCall(t, r, conn, "3", "Tunnel.Connect", map[string]any{"id": idA})
+	if connectResp["error"] != nil {
+		t.Fatalf("Tunnel.Connect A: %v", connectResp["error"])
+	}
+	_ = waitForConnState(t, r, conn, "Connected", 8*time.Second)
+
+	// Switch to B.
+	sw := rpcCall(t, r, conn, "4", "Tunnel.Switch", map[string]any{"id": idB})
+	if sw["error"] != nil {
+		t.Fatalf("Tunnel.Switch: %v", sw["error"])
+	}
+
+	// Should observe Connected to idB within 10s.
+	statusResp := waitForConnState(t, r, conn, "Connected", 10*time.Second)
+	if res, ok := statusResp["result"].(map[string]any); ok {
+		if connObj, ok := res["conn"].(map[string]any); ok {
+			if cfgID := connObj["configID"]; cfgID != idB {
+				t.Fatalf("after switch: configID = %v, want %s", cfgID, idB)
+			}
+		} else {
+			t.Fatalf("GetStatus result.conn not a map: %v", res)
+		}
+	} else {
+		t.Fatalf("GetStatus result not a map: %v", statusResp["result"])
+	}
 }

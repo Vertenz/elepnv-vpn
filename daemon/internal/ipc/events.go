@@ -37,6 +37,7 @@ type StateChangedParams = state.ConnStatus
 type TunnelMachine interface {
 	Connect(ctx context.Context, id xrayconfig.ULID) error
 	Disconnect(ctx context.Context) error
+	Switch(ctx context.Context, id xrayconfig.ULID) error
 	GetStatus(ctx context.Context) state.Status
 	IsActive(id xrayconfig.ULID) bool
 	Subscribe() (<-chan state.ConnStatus, func())
