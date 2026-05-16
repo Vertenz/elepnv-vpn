@@ -9,12 +9,14 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/coreos/go-systemd/v22/daemon"
 
+	"elepn/daemon/internal/health"
 	"elepn/daemon/internal/ipc"
 	"elepn/daemon/internal/platform"
 	"elepn/daemon/internal/state"
@@ -130,7 +132,17 @@ func run() int {
 		log.Info("state machine ready", "socksAddr", expectedSocksAddr)
 	}
 
-	srv := ipc.NewServer(sockPath, xrayInfo, store, tunnelMachine, log)
+	healthCfg := health.Config{
+		SocksAddr:       expectedSocksAddr,
+		Endpoint:        os.Getenv("XRAYD_HEALTH_ENDPOINT"),
+		IntervalSeconds: parseHealthInterval(os.Getenv("XRAYD_HEALTH_INTERVAL_SECONDS")),
+	}
+	healthMon := health.New(healthCfg, log)
+	log.Info("health monitor ready (disabled until renderer opts in)",
+		"endpoint", healthMon.GetConfig().Endpoint,
+		"intervalSeconds", healthMon.GetConfig().IntervalSeconds)
+
+	srv := ipc.NewServer(sockPath, xrayInfo, store, tunnelMachine, healthMon, log)
 	if err := srv.Listen(appCtx); err != nil {
 		log.Error("ipc listen failed", "err", err, "sock", sockPath)
 		return exitUnrecoverable
@@ -158,7 +170,8 @@ func run() int {
 	//   1. Stop accepting new connections so no new RPCs arrive.
 	//   2. Shutdown the Machine — runs armed cleanup, stops xray, posts terminal
 	//      Disconnected state, closes the subscriber channel.
-	//   3. Close the IPC server — drains in-flight handlers, closes the listener.
+	//   3. Disable the health monitor — cancels the probe loop.
+	//   4. Close the IPC server — drains in-flight handlers, closes the listener.
 	srv.StopAccept()
 
 	if machine != nil {
@@ -168,6 +181,8 @@ func run() int {
 		}
 		cancel()
 	}
+
+	healthMon.SetEnabled(context.Background(), false)
 
 	if err := srv.Close(); err != nil {
 		log.Warn("ipc server close error", "err", err)
@@ -188,4 +203,18 @@ func parseLogLevel(s string) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+func parseHealthInterval(s string) int {
+	if s == "" {
+		return 10
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil || n < 5 {
+		return 10
+	}
+	if n > 600 {
+		return 600
+	}
+	return n
 }
