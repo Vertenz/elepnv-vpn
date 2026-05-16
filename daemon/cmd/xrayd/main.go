@@ -162,6 +162,9 @@ func run() int {
 		IntervalSeconds: parseHealthInterval(os.Getenv("XRAYD_HEALTH_INTERVAL_SECONDS")),
 	}
 	healthMon := health.New(healthCfg, log)
+	if machine != nil {
+		machine.SetHealthSnapshot(func() any { return healthMon.GetStatus() })
+	}
 	log.Info("health monitor ready (disabled until renderer opts in)",
 		"endpoint", healthMon.GetConfig().Endpoint,
 		"intervalSeconds", healthMon.GetConfig().IntervalSeconds)

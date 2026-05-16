@@ -144,6 +144,13 @@ func (m *Machine) IsActive(id xrayconfig.ULID) bool {
 // notifications.
 func (m *Machine) Subscribe() (<-chan ConnStatus, func()) { return m.subs.Subscribe() }
 
+// SetHealthSnapshot wires a callable that returns the current health Status.
+// Optional — if not set, GetStatus returns Status with nil Health.
+// Must be called before Start (no synchronisation with the actor goroutine).
+func (m *Machine) SetHealthSnapshot(fn func() any) {
+	m.deps.healthSnapshot = fn
+}
+
 // Shutdown drains in-flight work and cancels the actor's context. After
 // Shutdown returns, no further commands will be accepted and the actor
 // goroutine has exited.

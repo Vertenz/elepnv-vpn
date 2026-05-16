@@ -91,6 +91,37 @@ func TestConnectReturnsAlreadyConnectedFromConnected(t *testing.T) {
 	}
 }
 
+func TestGetStatusIncludesHealthWhenWired(t *testing.T) {
+	m := newTestMachine(t)
+	m.deps.healthSnapshot = func() any { return map[string]any{"health": "Online"} }
+	m.state = ConnStatus{State: StateConnected}
+	m.Start()
+	t.Cleanup(func() { _ = m.Shutdown(context.Background()) })
+
+	status := m.GetStatus(context.Background())
+	if status.Health == nil {
+		t.Fatal("Health was nil; expected snapshot from injected callback")
+	}
+	snap, ok := status.Health.(map[string]any)
+	if !ok {
+		t.Fatalf("Health type = %T, want map[string]any", status.Health)
+	}
+	if snap["health"] != "Online" {
+		t.Fatalf("Health[health] = %v, want Online", snap["health"])
+	}
+}
+
+func TestGetStatusHealthNilWhenNotWired(t *testing.T) {
+	m := newTestMachine(t)
+	m.Start()
+	t.Cleanup(func() { _ = m.Shutdown(context.Background()) })
+
+	status := m.GetStatus(context.Background())
+	if status.Health != nil {
+		t.Fatalf("Health = %v, want nil when snapshot not wired", status.Health)
+	}
+}
+
 func TestShutdownReturnsDaemonShuttingDownAfterCancel(t *testing.T) {
 	m := newTestMachine(t)
 	m.Start()

@@ -158,7 +158,11 @@ func (m *Machine) handle(cmd command) {
 // ---------------------------------------------------------------------------
 
 func (m *Machine) handleGetStatus(c cmdGetStatus) {
-	c.reply <- Status{Conn: m.state}
+	s := Status{Conn: m.state}
+	if m.deps.healthSnapshot != nil {
+		s.Health = m.deps.healthSnapshot()
+	}
+	c.reply <- s
 }
 
 // ---------------------------------------------------------------------------

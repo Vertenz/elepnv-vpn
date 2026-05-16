@@ -47,9 +47,10 @@ type Config struct {
 
 // Worker dependencies — passed once at Machine construction.
 type deps struct {
-	cfgs *xrayconfig.Store
-	sup  *supervisor.Supervisor
-	cfg  Config
+	cfgs           *xrayconfig.Store
+	sup            *supervisor.Supervisor
+	cfg            Config
+	healthSnapshot func() any // returns the current health Status; nil-permitted
 }
 
 // Command interface — implemented by the unexported cmd* structs below.
