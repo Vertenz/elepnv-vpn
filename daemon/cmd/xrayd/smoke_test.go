@@ -124,6 +124,7 @@ signal.pause()
 		t.Fatal(err)
 	}
 	cfgDir := t.TempDir()
+	stateDir := t.TempDir()
 
 	sockPath := filepath.Join(tmpDir, "x.sock")
 	cmd := exec.Command(binPath)
@@ -131,6 +132,7 @@ signal.pause()
 		"XRAYD_SOCK="+sockPath,
 		"XRAYD_LOG_LEVEL=info",
 		"XRAYD_CONFIGS_DIR="+cfgDir,
+		"XRAYD_STATE_DIR="+stateDir,
 		"PATH="+binDir+":"+os.Getenv("PATH"),
 	)
 	cmd.Stdout = os.Stdout
