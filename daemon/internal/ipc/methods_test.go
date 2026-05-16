@@ -10,11 +10,12 @@ import (
 
 	"elepn/daemon/internal/derr"
 	"elepn/daemon/internal/platform"
+	"elepn/daemon/internal/state"
 	"elepn/daemon/internal/xrayconfig"
 )
 
 func TestPingReturnsOK(t *testing.T) {
-	d := newDispatch(platform.XrayInfo{}, nil, nil)
+	d := newDispatch(platform.XrayInfo{}, nil, nil, nil)
 	result, derrVal := d.handle(context.Background(), Request{Method: "Daemon.Ping"})
 	if derrVal != nil {
 		t.Fatalf("derr: %v", derrVal)
@@ -25,7 +26,7 @@ func TestPingReturnsOK(t *testing.T) {
 }
 
 func TestGetVersionWithXrayInstalled(t *testing.T) {
-	d := newDispatch(platform.XrayInfo{Found: true, Version: "Xray 1.8.4 (test)"}, nil, nil)
+	d := newDispatch(platform.XrayInfo{Found: true, Version: "Xray 1.8.4 (test)"}, nil, nil, nil)
 	result, derrVal := d.handle(context.Background(), Request{Method: "Daemon.GetVersion"})
 	if derrVal != nil {
 		t.Fatalf("derr: %v", derrVal)
@@ -37,7 +38,7 @@ func TestGetVersionWithXrayInstalled(t *testing.T) {
 }
 
 func TestGetVersionWithoutXrayReturnsNull(t *testing.T) {
-	d := newDispatch(platform.XrayInfo{Found: false}, nil, nil)
+	d := newDispatch(platform.XrayInfo{Found: false}, nil, nil, nil)
 	result, _ := d.handle(context.Background(), Request{Method: "Daemon.GetVersion"})
 	got := result.(versionResult)
 	if got.Xray != nil {
@@ -46,7 +47,7 @@ func TestGetVersionWithoutXrayReturnsNull(t *testing.T) {
 }
 
 func TestUnknownMethodReturnsMethodNotFound(t *testing.T) {
-	d := newDispatch(platform.XrayInfo{}, nil, nil)
+	d := newDispatch(platform.XrayInfo{}, nil, nil, nil)
 	_, derrVal := d.handle(context.Background(), Request{Method: "Tunnel.Foo"})
 	if !errors.Is(derrVal, derr.ErrMethodNotFound) {
 		t.Fatalf("err = %v, want ErrMethodNotFound", derrVal)
@@ -107,7 +108,7 @@ func (r *recorderBroadcaster) Broadcast(e Event) { r.got = append(r.got, e) }
 func TestConfigsAddStoresAndBroadcasts(t *testing.T) {
 	store := newStoreWithFakeXray(t)
 	rec := &recorderBroadcaster{}
-	d := newDispatch(platform.XrayInfo{Found: true}, store, rec)
+	d := newDispatch(platform.XrayInfo{Found: true}, store, rec, nil)
 
 	params, _ := json.Marshal(map[string]any{"json": validCfg})
 	res, derrVal := d.handle(context.Background(), Request{Method: "Configs.Add", Params: params})
@@ -125,7 +126,7 @@ func TestConfigsAddStoresAndBroadcasts(t *testing.T) {
 
 func TestConfigsAddSurfacesPathUnsafe(t *testing.T) {
 	store := newStoreWithFakeXray(t)
-	d := newDispatch(platform.XrayInfo{Found: true}, store, &recorderBroadcaster{})
+	d := newDispatch(platform.XrayInfo{Found: true}, store, &recorderBroadcaster{}, nil)
 
 	bad := `{"inbounds":[{"listen":"127.0.0.1","port":10808,"protocol":"socks","settings":{"auth":"noauth"},"streamSettings":{"tlsSettings":{"certificates":[{"certificateFile":"/etc/passwd"}]}}}]}`
 	params, _ := json.Marshal(map[string]any{"json": bad})
@@ -137,7 +138,7 @@ func TestConfigsAddSurfacesPathUnsafe(t *testing.T) {
 
 func TestConfigsAddRejectsMissingParams(t *testing.T) {
 	store := newStoreWithFakeXray(t)
-	d := newDispatch(platform.XrayInfo{Found: true}, store, &recorderBroadcaster{})
+	d := newDispatch(platform.XrayInfo{Found: true}, store, &recorderBroadcaster{}, nil)
 
 	_, derrVal := d.handle(context.Background(), Request{Method: "Configs.Add", Params: nil})
 	if !errors.Is(derrVal, derr.ErrInvalidParams) {
@@ -148,7 +149,7 @@ func TestConfigsAddRejectsMissingParams(t *testing.T) {
 func TestConfigsListReturnsAllStored(t *testing.T) {
 	store := newStoreWithFakeXray(t)
 	rec := &recorderBroadcaster{}
-	d := newDispatch(platform.XrayInfo{Found: true}, store, rec)
+	d := newDispatch(platform.XrayInfo{Found: true}, store, rec, nil)
 
 	for i := 0; i < 3; i++ {
 		params, _ := json.Marshal(map[string]any{"json": validCfg})
@@ -167,7 +168,7 @@ func TestConfigsListReturnsAllStored(t *testing.T) {
 func TestConfigsRemoveDeletesAndBroadcasts(t *testing.T) {
 	store := newStoreWithFakeXray(t)
 	rec := &recorderBroadcaster{}
-	d := newDispatch(platform.XrayInfo{Found: true}, store, rec)
+	d := newDispatch(platform.XrayInfo{Found: true}, store, rec, nil)
 
 	addParams, _ := json.Marshal(map[string]any{"json": validCfg})
 	addRes, _ := d.handle(context.Background(), Request{Method: "Configs.Add", Params: addParams})
@@ -193,7 +194,7 @@ func TestConfigsRemoveDeletesAndBroadcasts(t *testing.T) {
 
 func TestConfigsRemoveUnknownReturnsConfigUnknown(t *testing.T) {
 	store := newStoreWithFakeXray(t)
-	d := newDispatch(platform.XrayInfo{Found: true}, store, &recorderBroadcaster{})
+	d := newDispatch(platform.XrayInfo{Found: true}, store, &recorderBroadcaster{}, nil)
 
 	rmParams, _ := json.Marshal(map[string]any{"id": "01HX7N9KQ8R3JCBVB6Z3K9V4FK"})
 	_, derrVal := d.handle(context.Background(), Request{Method: "Configs.Remove", Params: rmParams})
@@ -204,7 +205,7 @@ func TestConfigsRemoveUnknownReturnsConfigUnknown(t *testing.T) {
 
 func TestConfigsRemoveMalformedIDReturnsConfigUnknown(t *testing.T) {
 	store := newStoreWithFakeXray(t)
-	d := newDispatch(platform.XrayInfo{Found: true}, store, &recorderBroadcaster{})
+	d := newDispatch(platform.XrayInfo{Found: true}, store, &recorderBroadcaster{}, nil)
 
 	rmParams, _ := json.Marshal(map[string]any{"id": "not-a-ulid"})
 	_, derrVal := d.handle(context.Background(), Request{Method: "Configs.Remove", Params: rmParams})
@@ -215,7 +216,7 @@ func TestConfigsRemoveMalformedIDReturnsConfigUnknown(t *testing.T) {
 
 func TestConfigsValidateReturnsOK(t *testing.T) {
 	store := newStoreWithFakeXray(t)
-	d := newDispatch(platform.XrayInfo{Found: true}, store, &recorderBroadcaster{})
+	d := newDispatch(platform.XrayInfo{Found: true}, store, &recorderBroadcaster{}, nil)
 
 	addParams, _ := json.Marshal(map[string]any{"json": validCfg})
 	addRes, _ := d.handle(context.Background(), Request{Method: "Configs.Add", Params: addParams})
@@ -228,5 +229,98 @@ func TestConfigsValidateReturnsOK(t *testing.T) {
 	}
 	if !res.(xrayconfig.ValidateResult).OK {
 		t.Fatal("Validate OK = false, want true")
+	}
+}
+
+// --- Plan 3: Tunnel.* dispatcher tests ---
+
+type fakeMachine struct {
+	connectCalls    []xrayconfig.ULID
+	connectErr      error
+	disconnectCalls int
+	disconnectErr   error
+	status          state.Status
+	isActive        bool
+	subsCh          chan state.ConnStatus
+}
+
+func (f *fakeMachine) Connect(_ context.Context, id xrayconfig.ULID) error {
+	f.connectCalls = append(f.connectCalls, id)
+	return f.connectErr
+}
+func (f *fakeMachine) Disconnect(_ context.Context) error {
+	f.disconnectCalls++
+	return f.disconnectErr
+}
+func (f *fakeMachine) GetStatus(_ context.Context) state.Status { return f.status }
+func (f *fakeMachine) IsActive(_ xrayconfig.ULID) bool          { return f.isActive }
+func (f *fakeMachine) Subscribe() (<-chan state.ConnStatus, func()) {
+	if f.subsCh == nil {
+		f.subsCh = make(chan state.ConnStatus, 4)
+	}
+	return f.subsCh, func() {}
+}
+
+func TestTunnelConnectAcceptedReturnsValidating(t *testing.T) {
+	fm := &fakeMachine{}
+	d := newDispatch(platform.XrayInfo{}, nil, &recorderBroadcaster{}, fm)
+	params, _ := json.Marshal(map[string]any{"id": "01HX7N9KQ8R3JCBVB6Z3K9V4FK"})
+	res, derrVal := d.handle(context.Background(), Request{Method: "Tunnel.Connect", Params: params})
+	if derrVal != nil {
+		t.Fatalf("err = %v", derrVal)
+	}
+	got := res.(tunnelStateResult)
+	if got.State != "Validating" {
+		t.Fatalf("State = %q, want Validating", got.State)
+	}
+	if len(fm.connectCalls) != 1 {
+		t.Fatalf("expected 1 Connect call, got %d", len(fm.connectCalls))
+	}
+}
+
+func TestTunnelConnectSurfacesAlreadyConnected(t *testing.T) {
+	fm := &fakeMachine{connectErr: derr.ErrAlreadyConnected}
+	d := newDispatch(platform.XrayInfo{}, nil, &recorderBroadcaster{}, fm)
+	params, _ := json.Marshal(map[string]any{"id": "01HX7N9KQ8R3JCBVB6Z3K9V4FK"})
+	_, derrVal := d.handle(context.Background(), Request{Method: "Tunnel.Connect", Params: params})
+	if !errors.Is(derrVal, derr.ErrAlreadyConnected) {
+		t.Fatalf("err = %v, want ErrAlreadyConnected", derrVal)
+	}
+}
+
+func TestTunnelDisconnectAcceptedReturnsDisconnecting(t *testing.T) {
+	fm := &fakeMachine{}
+	d := newDispatch(platform.XrayInfo{}, nil, &recorderBroadcaster{}, fm)
+	res, derrVal := d.handle(context.Background(), Request{Method: "Tunnel.Disconnect", Params: nil})
+	if derrVal != nil {
+		t.Fatalf("err = %v", derrVal)
+	}
+	got := res.(tunnelStateResult)
+	if got.State != "Disconnecting" {
+		t.Fatalf("State = %q, want Disconnecting", got.State)
+	}
+}
+
+func TestTunnelDisconnectSurfacesNotConnected(t *testing.T) {
+	fm := &fakeMachine{disconnectErr: derr.ErrNotConnected}
+	d := newDispatch(platform.XrayInfo{}, nil, &recorderBroadcaster{}, fm)
+	_, derrVal := d.handle(context.Background(), Request{Method: "Tunnel.Disconnect", Params: nil})
+	if !errors.Is(derrVal, derr.ErrNotConnected) {
+		t.Fatalf("err = %v, want ErrNotConnected", derrVal)
+	}
+}
+
+func TestTunnelGetStatusReturnsMachineSnapshot(t *testing.T) {
+	fm := &fakeMachine{
+		status: state.Status{Conn: state.ConnStatus{State: state.StateConnected, ConfigID: "01HX7N9KQ8R3JCBVB6Z3K9V4FK"}},
+	}
+	d := newDispatch(platform.XrayInfo{}, nil, &recorderBroadcaster{}, fm)
+	res, derrVal := d.handle(context.Background(), Request{Method: "Tunnel.GetStatus", Params: nil})
+	if derrVal != nil {
+		t.Fatalf("err = %v", derrVal)
+	}
+	got := res.(state.Status)
+	if got.Conn.State != state.StateConnected {
+		t.Fatalf("State = %q, want Connected", got.Conn.State)
 	}
 }

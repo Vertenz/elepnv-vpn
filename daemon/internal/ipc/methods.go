@@ -15,21 +15,23 @@ import (
 type MethodHandler func(ctx context.Context, params json.RawMessage) (result any, err *derr.Error)
 
 // dispatch is the IPC method routing table. It owns nothing — collaborators
-// (XrayInfo, Store, Broadcaster) are injected at construction so tests can
-// substitute fakes.
+// (XrayInfo, Store, Broadcaster, TunnelMachine) are injected at construction
+// so tests can substitute fakes.
 type dispatch struct {
 	methods  map[string]MethodHandler
 	xrayInfo platform.XrayInfo
 	configs  *xrayconfig.Store // nil-permitted in Plan-1-only tests
 	bcast    Broadcaster       // nil-permitted in Plan-1-only tests
+	machine  TunnelMachine     // nil-permitted in Plan-1/2-only tests
 }
 
-func newDispatch(xrayInfo platform.XrayInfo, store *xrayconfig.Store, bcast Broadcaster) *dispatch {
+func newDispatch(xrayInfo platform.XrayInfo, store *xrayconfig.Store, bcast Broadcaster, machine TunnelMachine) *dispatch {
 	d := &dispatch{
 		methods:  make(map[string]MethodHandler),
 		xrayInfo: xrayInfo,
 		configs:  store,
 		bcast:    bcast,
+		machine:  machine,
 	}
 	d.methods["Daemon.Ping"] = d.handlePing
 	d.methods["Daemon.GetVersion"] = d.handleGetVersion
@@ -37,6 +39,9 @@ func newDispatch(xrayInfo platform.XrayInfo, store *xrayconfig.Store, bcast Broa
 	d.methods["Configs.List"] = d.handleConfigsList
 	d.methods["Configs.Remove"] = d.handleConfigsRemove
 	d.methods["Configs.Validate"] = d.handleConfigsValidate
+	d.methods["Tunnel.Connect"] = d.handleTunnelConnect
+	d.methods["Tunnel.Disconnect"] = d.handleTunnelDisconnect
+	d.methods["Tunnel.GetStatus"] = d.handleTunnelGetStatus
 	return d
 }
 
@@ -213,3 +218,60 @@ func (d *dispatch) handleConfigsValidate(ctx context.Context, raw json.RawMessag
 	}
 	return res, nil
 }
+
+// --- Tunnel.* ---
+
+type tunnelConnectParams struct {
+	ID string `json:"id"`
+}
+
+type tunnelStateResult struct {
+	State string `json:"state"`
+}
+
+func (d *dispatch) handleTunnelConnect(ctx context.Context, raw json.RawMessage) (any, *derr.Error) {
+	if d.machine == nil {
+		return nil, derr.ErrInternal.WithMessage("tunnel machine not wired")
+	}
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, derr.ErrInvalidParams.WithMessage("Tunnel.Connect requires {id: string}")
+	}
+	var p tunnelConnectParams
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return nil, derr.ErrInvalidParams.With(err)
+	}
+	id, err := xrayconfig.ParseULID(p.ID)
+	if err != nil {
+		return nil, asDerrOrInternal(err)
+	}
+	if err := d.machine.Connect(ctx, id); err != nil {
+		return nil, asDerrOrInternal(err)
+	}
+	return tunnelStateResult{State: stateValidating}, nil
+}
+
+func (d *dispatch) handleTunnelDisconnect(ctx context.Context, _ json.RawMessage) (any, *derr.Error) {
+	if d.machine == nil {
+		return nil, derr.ErrInternal.WithMessage("tunnel machine not wired")
+	}
+	if err := d.machine.Disconnect(ctx); err != nil {
+		return nil, asDerrOrInternal(err)
+	}
+	return tunnelStateResult{State: stateDisconnecting}, nil
+}
+
+func (d *dispatch) handleTunnelGetStatus(ctx context.Context, _ json.RawMessage) (any, *derr.Error) {
+	if d.machine == nil {
+		return nil, derr.ErrInternal.WithMessage("tunnel machine not wired")
+	}
+	return d.machine.GetStatus(ctx), nil
+}
+
+// stateValidating and stateDisconnecting mirror state.StateValidating /
+// state.StateDisconnecting as wire-string constants. The IPC layer reports
+// the state the actor is transitioning INTO at the moment the call is
+// accepted; the renderer learns the final state via State.Changed events.
+const (
+	stateValidating    = "Validating"
+	stateDisconnecting = "Disconnecting"
+)

@@ -69,7 +69,8 @@ func (h *connHandle) write(b []byte) error {
 // NewServer constructs a server that will bind sockPath on Listen.
 // xrayInfo is used by Daemon.GetVersion (cached at startup).
 // store is the config registry; pass nil in tests that don't exercise Configs.*.
-func NewServer(sockPath string, xrayInfo platform.XrayInfo, store *xrayconfig.Store, log *slog.Logger) *Server {
+// machine is the tunnel state actor; pass nil in tests that don't exercise Tunnel.*.
+func NewServer(sockPath string, xrayInfo platform.XrayInfo, store *xrayconfig.Store, machine TunnelMachine, log *slog.Logger) *Server {
 	baseCtx, cancel := context.WithCancel(context.Background())
 	s := &Server{
 		sockPath:   sockPath,
@@ -78,11 +79,36 @@ func NewServer(sockPath string, xrayInfo platform.XrayInfo, store *xrayconfig.St
 		baseCtx:    baseCtx,
 		cancelBase: cancel,
 	}
-	s.dispatch = newDispatch(xrayInfo, store, s)
+	s.dispatch = newDispatch(xrayInfo, store, s, machine)
 	// onSlowClient: close the offending connection so the renderer reconnects
 	// and refetches state via Tunnel.GetStatus.
 	s.subs = newSubscribers(log, func(id uint64) { s.closeBySubscriberID(id) })
+	if machine != nil {
+		go s.runStateChangedBridge(machine)
+	}
 	return s
+}
+
+// runStateChangedBridge subscribes to the Machine's ConnStatus channel and
+// rebroadcasts each event as a State.Changed notification through the existing
+// Broadcaster (which fans out to all open IPC clients).
+func (s *Server) runStateChangedBridge(machine TunnelMachine) {
+	ch, unsub := machine.Subscribe()
+	defer unsub()
+	for {
+		select {
+		case <-s.baseCtx.Done():
+			return
+		case st, ok := <-ch:
+			if !ok {
+				return
+			}
+			s.Broadcast(Event{
+				Method: "State.Changed",
+				Params: st,
+			})
+		}
+	}
 }
 
 // Listen performs §8.1 socket hardening (stale-unlink + umask + chmod) and

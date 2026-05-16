@@ -1,5 +1,12 @@
 package ipc
 
+import (
+	"context"
+
+	"elepn/daemon/internal/state"
+	"elepn/daemon/internal/xrayconfig"
+)
+
 // Event is the payload carried by Server.Broadcast. Plan 1 declared the type
 // but emitted nothing; Plan 2 starts emitting Configs.Changed.
 type Event struct {
@@ -19,4 +26,17 @@ type ConfigsChangedParams struct {
 // events. It exists so methods.go can be unit-tested without a real Server.
 type Broadcaster interface {
 	Broadcast(Event)
+}
+
+// StateChangedParams is the wire payload for the State.Changed notification.
+type StateChangedParams = state.ConnStatus
+
+// TunnelMachine is the subset of *state.Machine the IPC dispatch layer needs.
+// Interface so the dispatcher can be unit-tested without a real actor.
+type TunnelMachine interface {
+	Connect(ctx context.Context, id xrayconfig.ULID) error
+	Disconnect(ctx context.Context) error
+	GetStatus(ctx context.Context) state.Status
+	IsActive(id xrayconfig.ULID) bool
+	Subscribe() (<-chan state.ConnStatus, func())
 }
