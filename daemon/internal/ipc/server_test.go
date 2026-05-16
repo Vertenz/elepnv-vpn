@@ -54,7 +54,7 @@ func startServer(t *testing.T) (*ipc.Server, string) {
 		Found:   true,
 		Path:    "/usr/local/bin/xray",
 		Version: "TestXray 0.0.0",
-	}, slog.New(slog.NewJSONHandler(io.Discard, nil)))
+	}, nil /* store */, slog.New(slog.NewJSONHandler(io.Discard, nil)))
 	if err := srv.Listen(context.Background()); err != nil {
 		t.Fatalf("Listen: %v", err)
 	}

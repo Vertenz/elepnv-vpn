@@ -15,6 +15,7 @@ import (
 
 	"elepn/daemon/internal/derr"
 	"elepn/daemon/internal/platform"
+	"elepn/daemon/internal/xrayconfig"
 )
 
 // Server is the daemon's IPC layer. One instance per process. Lifecycle:
@@ -67,16 +68,17 @@ func (h *connHandle) write(b []byte) error {
 
 // NewServer constructs a server that will bind sockPath on Listen.
 // xrayInfo is used by Daemon.GetVersion (cached at startup).
-func NewServer(sockPath string, xrayInfo platform.XrayInfo, log *slog.Logger) *Server {
+// store is the config registry; pass nil in tests that don't exercise Configs.*.
+func NewServer(sockPath string, xrayInfo platform.XrayInfo, store *xrayconfig.Store, log *slog.Logger) *Server {
 	baseCtx, cancel := context.WithCancel(context.Background())
 	s := &Server{
 		sockPath:   sockPath,
 		log:        log,
-		dispatch:   newDispatch(xrayInfo),
 		conns:      make(map[*connHandle]struct{}),
 		baseCtx:    baseCtx,
 		cancelBase: cancel,
 	}
+	s.dispatch = newDispatch(xrayInfo, store, s)
 	// onSlowClient: close the offending connection so the renderer reconnects
 	// and refetches state via Tunnel.GetStatus.
 	s.subs = newSubscribers(log, func(id uint64) { s.closeBySubscriberID(id) })

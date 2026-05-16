@@ -17,6 +17,7 @@ func TestRegisterConnRejectsAfterClose(t *testing.T) {
 	srv := NewServer(
 		filepath.Join(t.TempDir(), "ignored.sock"),
 		platform.XrayInfo{},
+		nil, /* store */
 		slog.New(slog.NewJSONHandler(io.Discard, nil)),
 	)
 	if err := srv.Close(); err != nil {
