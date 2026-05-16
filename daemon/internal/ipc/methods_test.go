@@ -324,3 +324,19 @@ func TestTunnelGetStatusReturnsMachineSnapshot(t *testing.T) {
 		t.Fatalf("State = %q, want Connected", got.Conn.State)
 	}
 }
+
+func TestConfigsRemoveRejectsActiveConfig(t *testing.T) {
+	store := newStoreWithFakeXray(t)
+	fm := &fakeMachine{isActive: true}
+	d := newDispatch(platform.XrayInfo{Found: true}, store, &recorderBroadcaster{}, fm)
+
+	addParams, _ := json.Marshal(map[string]any{"json": validCfg})
+	addRes, _ := d.handle(context.Background(), Request{Method: "Configs.Add", Params: addParams})
+	id := addRes.(addResult).ID
+
+	rmParams, _ := json.Marshal(map[string]any{"id": id})
+	_, derrVal := d.handle(context.Background(), Request{Method: "Configs.Remove", Params: rmParams})
+	if !errors.Is(derrVal, derr.ErrConfigInUse) {
+		t.Fatalf("err = %v, want ErrConfigInUse", derrVal)
+	}
+}

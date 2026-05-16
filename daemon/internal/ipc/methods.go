@@ -175,8 +175,9 @@ func (d *dispatch) handleConfigsRemove(_ context.Context, raw json.RawMessage) (
 		// client id the same as missing id.
 		return nil, asDerrOrInternal(err)
 	}
-	// TODO(plan-3): consult Machine.IsActive(id) and return ErrConfigInUse
-	// before calling Store.Remove.
+	if d.machine != nil && d.machine.IsActive(id) {
+		return nil, derr.ErrConfigInUse
+	}
 	if err := d.configs.Remove(id); err != nil {
 		return nil, asDerrOrInternal(err)
 	}
