@@ -6,6 +6,7 @@ import (
 
 	"elepn/daemon/internal/derr"
 	"elepn/daemon/internal/platform"
+	"elepn/daemon/internal/state"
 	"elepn/daemon/internal/version"
 	"elepn/daemon/internal/xrayconfig"
 )
@@ -247,7 +248,7 @@ func (d *dispatch) handleTunnelConnect(ctx context.Context, raw json.RawMessage)
 	if err := d.machine.Connect(ctx, id); err != nil {
 		return nil, asDerrOrInternal(err)
 	}
-	return tunnelStateResult{State: stateValidating}, nil
+	return tunnelStateResult{State: state.StateValidating}, nil
 }
 
 func (d *dispatch) handleTunnelDisconnect(ctx context.Context, _ json.RawMessage) (any, *derr.Error) {
@@ -257,7 +258,7 @@ func (d *dispatch) handleTunnelDisconnect(ctx context.Context, _ json.RawMessage
 	if err := d.machine.Disconnect(ctx); err != nil {
 		return nil, asDerrOrInternal(err)
 	}
-	return tunnelStateResult{State: stateDisconnecting}, nil
+	return tunnelStateResult{State: state.StateDisconnecting}, nil
 }
 
 func (d *dispatch) handleTunnelGetStatus(ctx context.Context, _ json.RawMessage) (any, *derr.Error) {
@@ -266,12 +267,3 @@ func (d *dispatch) handleTunnelGetStatus(ctx context.Context, _ json.RawMessage)
 	}
 	return d.machine.GetStatus(ctx), nil
 }
-
-// stateValidating and stateDisconnecting mirror state.StateValidating /
-// state.StateDisconnecting as wire-string constants. The IPC layer reports
-// the state the actor is transitioning INTO at the moment the call is
-// accepted; the renderer learns the final state via State.Changed events.
-const (
-	stateValidating    = "Validating"
-	stateDisconnecting = "Disconnecting"
-)

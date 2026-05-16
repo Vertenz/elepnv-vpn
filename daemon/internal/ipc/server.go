@@ -123,6 +123,7 @@ func (s *Server) runStateChangedBridge(machine TunnelMachine) {
 func (s *Server) Listen(_ context.Context) error {
 	l, err := bindControlSocket(s.sockPath, s.log)
 	if err != nil {
+		s.cancelBase()
 		return err
 	}
 	s.mu.Lock()
