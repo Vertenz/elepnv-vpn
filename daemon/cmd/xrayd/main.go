@@ -21,9 +21,9 @@ import (
 // exitOK / exitTransient / exitUnrecoverable are the three exit codes the
 // systemd unit (§15) discriminates via RestartPreventExitStatus=2.
 const (
-	exitOK             = 0
-	exitTransient      = 1
-	exitUnrecoverable  = 2
+	exitOK            = 0
+	exitTransient     = 1
+	exitUnrecoverable = 2
 )
 
 func main() {
