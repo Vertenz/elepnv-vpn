@@ -68,9 +68,12 @@ func checkInboundSafety(jsonBytes []byte, expectedSocksAddr string) error {
 	ptr := "/inbounds/0"
 
 	switch strings.ToLower(strings.TrimSpace(ib.Listen)) {
-	case "0.0.0.0", "::", "*", "":
+	case "":
 		return derr.NewInboundUnsafe(ptr+"/listen",
-			fmt.Sprintf("public bind not allowed: %q", ib.Listen))
+			`listen field is absent (xray defaults to 0.0.0.0); set listen to "127.0.0.1"`)
+	case "0.0.0.0", "::", "*":
+		return derr.NewInboundUnsafe(ptr+"/listen",
+			fmt.Sprintf("public bind not allowed: %q; set listen to \"127.0.0.1\"", ib.Listen))
 	}
 	if !strings.EqualFold(ib.Protocol, "socks") {
 		return derr.NewInboundUnsafe(ptr+"/protocol",
@@ -84,7 +87,7 @@ func checkInboundSafety(jsonBytes []byte, expectedSocksAddr string) error {
 		return derr.NewInboundUnsafe(ptr+"/port",
 			fmt.Sprintf("expected port %q, got %v", expectedPort, ib.Port))
 	}
-	if auth, _ := ib.Settings["auth"].(string); auth != "" && !strings.EqualFold(auth, "noauth") {
+	if auth, _ := ib.Settings["auth"].(string); auth != "" && auth != "noauth" {
 		return derr.NewInboundUnsafe(ptr+"/settings/auth",
 			fmt.Sprintf("unsupported socks auth: %q (v1 expects noauth)", auth))
 	}

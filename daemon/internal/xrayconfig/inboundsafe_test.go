@@ -56,7 +56,7 @@ func TestCheckInboundSafetyRejectsTwoInbounds(t *testing.T) {
 }
 
 func TestCheckInboundSafetyRejectsPublicBind(t *testing.T) {
-	for _, listen := range []string{"0.0.0.0", "::", "*", ""} {
+	for _, listen := range []string{"0.0.0.0", "::", "*"} {
 		t.Run(listen, func(t *testing.T) {
 			cfg := []byte(`{"inbounds":[{
 				"listen":"` + listen + `","port":10808,"protocol":"socks","settings":{"auth":"noauth"}
@@ -69,6 +69,22 @@ func TestCheckInboundSafetyRejectsPublicBind(t *testing.T) {
 				t.Fatalf("listen=%q: detail should mention public bind: %v", listen, err)
 			}
 		})
+	}
+}
+
+func TestCheckInboundSafetyRejectsAbsentListen(t *testing.T) {
+	// An absent listen field is distinct from a public bind: xray defaults to
+	// 0.0.0.0, so it IS a public bind, but the error message must say "absent"
+	// so the renderer can produce an actionable hint.
+	cfg := []byte(`{"inbounds":[{
+		"listen":"","port":10808,"protocol":"socks","settings":{"auth":"noauth"}
+	}]}`)
+	err := checkInboundSafety(cfg, expectedSocks)
+	if !errors.Is(err, derr.ErrInboundUnsafe) {
+		t.Fatalf("err = %v, want ErrInboundUnsafe", err)
+	}
+	if !strings.Contains(err.Error(), "absent") {
+		t.Fatalf("detail should mention absent listen field: %v", err)
 	}
 }
 
