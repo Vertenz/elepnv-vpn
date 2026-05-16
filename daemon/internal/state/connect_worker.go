@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"elepn/daemon/internal/derr"
@@ -69,12 +70,20 @@ func doConnect(
 	result.child = child
 
 	if err := supervisor.AwaitProcessAlive(ctx, child, 1*time.Second); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			result.err = derr.ErrConnectTimeout.With(err)
+			return
+		}
 		result.err = derr.WrapDiedEarly(err)
 		return
 	}
 	// 10s budget covers xray's cold-cache geodata indexing on HDD (3 MB geosite.dat
 	// with 60k+ entries) before the SOCKS inbound binds.
 	if err := supervisor.AwaitSocksReady(ctx, d.cfg.SocksAddr, 10*time.Second); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			result.err = derr.ErrConnectTimeout.With(err)
+			return
+		}
 		result.err = derr.WrapInbound(err)
 		return
 	}
