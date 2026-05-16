@@ -23,7 +23,11 @@ var (
 	ErrDaemonShuttingDown  = &Error{Code: -32014, Symbol: "daemon_shutting_down", Message: "daemon is shutting down"}
 	ErrPathUnsafe          = &Error{Code: -32015, Symbol: "path_unsafe", Message: "config references a path outside the allowed roots"}
 	ErrRequestTooLarge     = &Error{Code: -32016, Symbol: "request_too_large", Message: "request line exceeds max_request_bytes"}
+	ErrConfigQuotaExceeded = &Error{Code: -32017, Symbol: "config_quota_exceeded", Message: "config registry is full"}
+	ErrValidationBusy      = &Error{Code: -32018, Symbol: "validation_busy", Message: "validation queue is full; try again"}
+	ErrRateLimited         = &Error{Code: -32019, Symbol: "rate_limited", Message: "connect rate exceeded for this connection"}
 	ErrInboundUnsafe       = &Error{Code: -32020, Symbol: "inbound_unsafe", Message: "config inbound failed safety policy"}
+	ErrHealthDisabled      = &Error{Code: -32021, Symbol: "health_disabled", Message: "health probe is disabled"}
 
 	// JSON-RPC reserved.
 	ErrParseError     = &Error{Code: -32700, Symbol: "parse_error", Message: "request was not valid JSON"}
