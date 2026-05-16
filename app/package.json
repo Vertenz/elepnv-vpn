@@ -18,7 +18,9 @@
     "lint:style:fix": "stylelint \"src/**/*.css\" --fix",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
-    "check": "npm run typecheck && npm run lint"
+    "check": "npm run typecheck && npm run lint",
+    "test": "vitest run",
+    "test:validate": "TS_NODE_COMPILER_OPTIONS='{\"module\":\"CommonJS\",\"moduleResolution\":\"node\"}' node -r tsconfig-paths/register -r ts-node/register src/main/engine/config-builder.validate.ts"
   },
   "keywords": [],
   "author": {
@@ -60,9 +62,11 @@
     "stylelint-config-recess-order": "^5.1.1",
     "stylelint-config-standard": "^36.0.1",
     "ts-node": "^10.9.2",
+    "tsx": "^4.22.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.59.3",
-    "vite": "^8.0.12"
+    "vite": "^8.0.12",
+    "vitest": "^4.1.6"
   },
   "dependencies": {
     "@fontsource/geist-mono": "^5.2.7",
