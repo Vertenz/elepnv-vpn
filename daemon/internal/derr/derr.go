@@ -12,6 +12,11 @@ import (
 	"fmt"
 )
 
+// Detail is an optional structured payload merged into the JSON-RPC
+// error.data object alongside `symbol`. Constructors like NewPathUnsafe
+// populate it so renderers can highlight the offending JSON pointer.
+type Detail map[string]any
+
 // Error is the daemon's IPC-visible error value. It implements both the Go
 // error interface and JSON-RPC's error.Code/error.Message/error.data layout.
 type Error struct {
@@ -19,6 +24,7 @@ type Error struct {
 	Symbol  string // stable identifier, e.g. "config_unknown"
 	Message string // human-readable default; may be overridden per-call via With
 	Cause   error  // optional wrapped cause (logged but not sent on the wire)
+	detail  Detail // optional; surfaces under data.detail when non-nil
 }
 
 // Error implements the error interface.
@@ -44,39 +50,44 @@ func (e *Error) Is(target error) bool {
 // With returns a copy of e with the given cause attached. The original
 // sentinel pointer is preserved as the chain's tail via Cause wrapping.
 func (e *Error) With(cause error) *Error {
-	return &Error{
-		Code:    e.Code,
-		Symbol:  e.Symbol,
-		Message: e.Message,
-		Cause:   cause,
-	}
+	cp := *e
+	cp.Cause = cause
+	return &cp
 }
 
 // WithMessage returns a copy of e with a per-call message override. The Symbol
 // stays stable; the message can carry context like the offending JSON pointer.
 func (e *Error) WithMessage(msg string) *Error {
-	return &Error{
-		Code:    e.Code,
-		Symbol:  e.Symbol,
-		Message: msg,
-		Cause:   e.Cause,
-	}
+	cp := *e
+	cp.Message = msg
+	return &cp
+}
+
+// WithDetail returns a copy of e with the given structured detail attached.
+// The detail surfaces in JSON()'s error.data.detail object.
+func (e *Error) WithDetail(d Detail) *Error {
+	cp := *e
+	cp.detail = d
+	return &cp
 }
 
 // JSON returns the JSON-RPC `error` object for this error.
 // Output shape: {"code": -32004, "message": "config_invalid: <msg>",
 //
 //	"data": {"symbol": "config_invalid"}}.
+//
+// When detail is present, data also contains a "detail" key.
 func (e *Error) JSON() json.RawMessage {
 	type errObj struct {
 		Code    int             `json:"code"`
 		Message string          `json:"message"`
 		Data    json.RawMessage `json:"data"`
 	}
-	data := struct {
-		Symbol string `json:"symbol"`
-	}{Symbol: e.Symbol}
-	dataBytes, _ := json.Marshal(data)
+	dataMap := map[string]any{"symbol": e.Symbol}
+	if e.detail != nil {
+		dataMap["detail"] = e.detail
+	}
+	dataBytes, _ := json.Marshal(dataMap)
 	b, _ := json.Marshal(errObj{
 		Code:    e.Code,
 		Message: e.Symbol + ": " + e.Message,
@@ -92,4 +103,22 @@ func AsDerr(err error) *Error {
 		return de
 	}
 	return nil
+}
+
+// NewPathUnsafe returns ErrPathUnsafe with a JSON-pointer location and the
+// offending value, so the renderer can highlight the field in the config UI.
+func NewPathUnsafe(pointer, value string) *Error {
+	return ErrPathUnsafe.WithDetail(Detail{
+		"pointer": pointer,
+		"value":   value,
+	})
+}
+
+// NewInboundUnsafe returns ErrInboundUnsafe with a JSON-pointer location and
+// a human-readable reason string.
+func NewInboundUnsafe(pointer, reason string) *Error {
+	return ErrInboundUnsafe.WithDetail(Detail{
+		"pointer": pointer,
+		"reason":  reason,
+	}).WithMessage(reason)
 }
