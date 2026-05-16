@@ -1,0 +1,59 @@
+[Unit]
+Description=elepn xray-core privileged helper daemon
+After=network.target
+Documentation=https://github.com/example/elepn
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/xrayd
+Restart=on-failure
+RestartSec=2s
+RestartPreventExitStatus=2
+TimeoutStopSec=15s
+KillMode=control-group
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=XRAYD_LOG_LEVEL=info
+
+# Identity & privileges (v1: no capabilities)
+User=xrayd
+Group=xrayd
+AmbientCapabilities=
+CapabilityBoundingSet=
+NoNewPrivileges=yes
+
+# Filesystem
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+RuntimeDirectory=xrayd
+RuntimeDirectoryMode=0750
+StateDirectory=xrayd
+StateDirectoryMode=0700
+ReadWritePaths=/run/xrayd /var/lib/xrayd
+
+# Kernel & namespaces
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+
+# System calls
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+# Network
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
