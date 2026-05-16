@@ -273,17 +273,3 @@ func (m *Machine) postState(next ConnStatus) {
 	}
 	m.subs.broadcast(next)
 }
-
-// ---------------------------------------------------------------------------
-// Subscribers stub — Task 8 replaces this with the real fan-out implementation.
-// ---------------------------------------------------------------------------
-
-// Subscribers is the fan-out hub that notifies IPC subscribers of state changes.
-// The real implementation is provided in Task 8; this stub compiles the package.
-type Subscribers struct{}
-
-func newSubscribers(_ *slog.Logger) *Subscribers { return &Subscribers{} }
-
-func (s *Subscribers) broadcast(_ ConnStatus) {
-	// TODO Task 8
-}
