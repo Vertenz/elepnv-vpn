@@ -394,6 +394,15 @@ func TestFullRPCCatalogCallable(t *testing.T) {
 		t.Fatal("Configs.List returned nil result")
 	}
 
+	// Configs.Get — verify the stored JSON is retrievable.
+	getResp := rpcCall(t, r, conn, "7a", "Configs.Get", map[string]any{"id": id})
+	if getResp["error"] != nil {
+		t.Fatalf("Configs.Get error: %v", getResp["error"])
+	}
+	if getRes, ok := getResp["result"].(map[string]any); !ok || getRes["json"] == "" {
+		t.Fatalf("Configs.Get result.json is empty: %v", getResp["result"])
+	}
+
 	// Configs.Validate
 	validateResp := rpcCall(t, r, conn, "8", "Configs.Validate", map[string]any{"id": id})
 	if validateResp["error"] != nil {
@@ -462,17 +471,6 @@ func TestFullRPCCatalogCallable(t *testing.T) {
 		t.Logf("Health.Probe returned non-disabled error (acceptable in offline env): %v", hpResp["error"])
 	}
 
-	// Configs.Get — verify the stored JSON is retrievable.
-	getResp := rpcCall(t, r, conn, "15", "Configs.Get", map[string]any{"id": id})
-	if getResp["error"] != nil {
-		t.Fatalf("Configs.Get error: %v", getResp["error"])
-	}
-	if getResp["result"] == nil {
-		t.Fatal("Configs.Get returned nil result")
-	}
-	if getRes, ok := getResp["result"].(map[string]any); !ok || getRes["json"] == "" {
-		t.Fatalf("Configs.Get result.json is empty: %v", getResp["result"])
-	}
 }
 
 // TestTunnelSwitchFromConnectedToOtherConfig verifies the Tunnel.Switch RPC:
