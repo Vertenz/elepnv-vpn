@@ -76,7 +76,8 @@ func (h *connHandle) write(b []byte) error {
 // xrayInfo is used by Daemon.GetVersion (cached at startup).
 // store is the config registry; pass nil in tests that don't exercise Configs.*.
 // machine is the tunnel state actor; pass nil in tests that don't exercise Tunnel.*.
-func NewServer(sockPath string, xrayInfo platform.XrayInfo, store *xrayconfig.Store, machine TunnelMachine, log *slog.Logger) *Server {
+// hm is the health subsystem; pass nil in tests that don't exercise Health.*.
+func NewServer(sockPath string, xrayInfo platform.XrayInfo, store *xrayconfig.Store, machine TunnelMachine, hm HealthMachine, log *slog.Logger) *Server {
 	baseCtx, cancel := context.WithCancel(context.Background())
 	s := &Server{
 		sockPath:   sockPath,
@@ -85,12 +86,15 @@ func NewServer(sockPath string, xrayInfo platform.XrayInfo, store *xrayconfig.St
 		baseCtx:    baseCtx,
 		cancelBase: cancel,
 	}
-	s.dispatch = newDispatch(xrayInfo, store, s, machine)
+	s.dispatch = newDispatch(xrayInfo, store, s, machine, hm)
 	// onSlowClient: close the offending connection so the renderer reconnects
 	// and refetches state via Tunnel.GetStatus.
 	s.subs = newSubscribers(log, func(id uint64) { s.closeBySubscriberID(id) })
 	if machine != nil {
 		go s.runStateChangedBridge(machine)
+	}
+	if hm != nil {
+		go s.runHealthChangedBridge(hm)
 	}
 	return s
 }
@@ -113,6 +117,25 @@ func (s *Server) runStateChangedBridge(machine TunnelMachine) {
 				Method: "State.Changed",
 				Params: st,
 			})
+		}
+	}
+}
+
+// runHealthChangedBridge subscribes to the Health subsystem's Status channel
+// and rebroadcasts each event as a Health.Changed notification. Mirrors the
+// pattern of runStateChangedBridge.
+func (s *Server) runHealthChangedBridge(hm HealthMachine) {
+	ch, unsub := hm.Subscribe()
+	defer unsub()
+	for {
+		select {
+		case <-s.baseCtx.Done():
+			return
+		case st, ok := <-ch:
+			if !ok {
+				return
+			}
+			s.Broadcast(Event{Method: "Health.Changed", Params: st})
 		}
 	}
 }

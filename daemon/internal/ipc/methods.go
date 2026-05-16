@@ -16,23 +16,25 @@ import (
 type MethodHandler func(ctx context.Context, params json.RawMessage) (result any, err *derr.Error)
 
 // dispatch is the IPC method routing table. It owns nothing — collaborators
-// (XrayInfo, Store, Broadcaster, TunnelMachine) are injected at construction
-// so tests can substitute fakes.
+// (XrayInfo, Store, Broadcaster, TunnelMachine, HealthMachine) are injected at
+// construction so tests can substitute fakes.
 type dispatch struct {
 	methods  map[string]MethodHandler
 	xrayInfo platform.XrayInfo
 	configs  *xrayconfig.Store // nil-permitted in Plan-1-only tests
 	bcast    Broadcaster       // nil-permitted in Plan-1-only tests
 	machine  TunnelMachine     // nil-permitted in Plan-1/2-only tests
+	health   HealthMachine     // nil-permitted in tests that don't exercise Health.*
 }
 
-func newDispatch(xrayInfo platform.XrayInfo, store *xrayconfig.Store, bcast Broadcaster, machine TunnelMachine) *dispatch {
+func newDispatch(xrayInfo platform.XrayInfo, store *xrayconfig.Store, bcast Broadcaster, machine TunnelMachine, hm HealthMachine) *dispatch {
 	d := &dispatch{
 		methods:  make(map[string]MethodHandler),
 		xrayInfo: xrayInfo,
 		configs:  store,
 		bcast:    bcast,
 		machine:  machine,
+		health:   hm,
 	}
 	d.methods["Daemon.Ping"] = d.handlePing
 	d.methods["Daemon.GetVersion"] = d.handleGetVersion
@@ -43,6 +45,9 @@ func newDispatch(xrayInfo platform.XrayInfo, store *xrayconfig.Store, bcast Broa
 	d.methods["Tunnel.Connect"] = d.handleTunnelConnect
 	d.methods["Tunnel.Disconnect"] = d.handleTunnelDisconnect
 	d.methods["Tunnel.GetStatus"] = d.handleTunnelGetStatus
+	d.methods["Health.SetEnabled"] = d.handleHealthSetEnabled
+	d.methods["Health.Probe"] = d.handleHealthProbe
+	d.methods["Health.GetConfig"] = d.handleHealthGetConfig
 	return d
 }
 
@@ -274,4 +279,61 @@ func (d *dispatch) handleTunnelGetStatus(ctx context.Context, _ json.RawMessage)
 		return nil, derr.ErrInternal.WithMessage("tunnel machine not wired")
 	}
 	return d.machine.GetStatus(ctx), nil
+}
+
+// --- Health.* ---
+
+type healthSetEnabledParams struct {
+	Enabled bool `json:"enabled"`
+}
+
+type healthOKResult struct {
+	OK bool `json:"ok"`
+}
+
+type healthConfigResult struct {
+	Enabled         bool   `json:"enabled"`
+	Endpoint        string `json:"endpoint"`
+	IntervalSeconds int    `json:"intervalSeconds"`
+}
+
+func (d *dispatch) handleHealthSetEnabled(ctx context.Context, raw json.RawMessage) (any, *derr.Error) {
+	if d.health == nil {
+		return nil, derr.ErrInternal.WithMessage("health subsystem not wired")
+	}
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, derr.ErrInvalidParams.WithMessage("Health.SetEnabled requires {enabled: bool}")
+	}
+	var p healthSetEnabledParams
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return nil, derr.ErrInvalidParams.With(err)
+	}
+	d.health.SetEnabled(ctx, p.Enabled)
+	return healthOKResult{OK: true}, nil
+}
+
+func (d *dispatch) handleHealthProbe(ctx context.Context, _ json.RawMessage) (any, *derr.Error) {
+	if d.health == nil {
+		return nil, derr.ErrInternal.WithMessage("health subsystem not wired")
+	}
+	s, err := d.health.Probe(ctx)
+	if err != nil {
+		// The only documented error path is "disabled". Map any non-nil error
+		// to ErrHealthDisabled — if future Probe() paths add transient failures,
+		// this mapping will need to distinguish them.
+		return nil, derr.ErrHealthDisabled
+	}
+	return s, nil
+}
+
+func (d *dispatch) handleHealthGetConfig(_ context.Context, _ json.RawMessage) (any, *derr.Error) {
+	if d.health == nil {
+		return nil, derr.ErrInternal.WithMessage("health subsystem not wired")
+	}
+	cfg := d.health.GetConfig()
+	return healthConfigResult{
+		Enabled:         d.health.IsEnabled(),
+		Endpoint:        cfg.Endpoint,
+		IntervalSeconds: cfg.IntervalSeconds,
+	}, nil
 }

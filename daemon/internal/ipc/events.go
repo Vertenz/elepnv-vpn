@@ -3,6 +3,7 @@ package ipc
 import (
 	"context"
 
+	"elepn/daemon/internal/health"
 	"elepn/daemon/internal/state"
 	"elepn/daemon/internal/xrayconfig"
 )
@@ -39,4 +40,17 @@ type TunnelMachine interface {
 	GetStatus(ctx context.Context) state.Status
 	IsActive(id xrayconfig.ULID) bool
 	Subscribe() (<-chan state.ConnStatus, func())
+}
+
+// HealthChangedParams is the wire payload for the Health.Changed notification.
+type HealthChangedParams = health.Status
+
+// HealthMachine is the subset of *health.Health the IPC dispatch layer needs.
+// Interface so the dispatcher can be unit-tested without a real probe scheduler.
+type HealthMachine interface {
+	SetEnabled(ctx context.Context, enabled bool)
+	Probe(ctx context.Context) (health.Status, error)
+	GetConfig() health.Config
+	IsEnabled() bool
+	Subscribe() (<-chan health.Status, func())
 }

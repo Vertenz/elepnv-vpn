@@ -19,6 +19,7 @@ func TestRegisterConnRejectsAfterClose(t *testing.T) {
 		platform.XrayInfo{},
 		nil, /* store */
 		nil, /* machine */
+		nil, /* health */
 		slog.New(slog.NewJSONHandler(io.Discard, nil)),
 	)
 	if err := srv.Close(); err != nil {
