@@ -1,0 +1,290 @@
+package ipc
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net"
+	"os"
+	"sync"
+	"sync/atomic"
+	"syscall"
+
+	"elepn/daemon/internal/derr"
+	"elepn/daemon/internal/platform"
+)
+
+// Server is the daemon's IPC layer. One instance per process. Lifecycle:
+//
+//	Listen — opens the socket and starts accepting.
+//	StopAccept — stop accepting new connections, keep existing ones open.
+//	Close — terminate all open connections and unlink the socket.
+type Server struct {
+	sockPath string
+	log      *slog.Logger
+
+	dispatch *dispatch
+	subs     *subscribers
+
+	mu        sync.Mutex
+	listener  *net.UnixListener
+	listening atomic.Bool
+	conns     map[*connHandle]struct{}
+
+	closeOnce sync.Once
+}
+
+type connHandle struct {
+	conn net.Conn
+	id   uint64 // subscriber id; 0 if not yet a subscriber
+
+	// wmu serializes writes to conn so the reader-side response writes and
+	// the writerLoop's event writes never interleave bytes on the wire.
+	// Per-connection only; different connections write concurrently.
+	wmu sync.Mutex
+}
+
+// write sends b (which must already be a complete NDJSON line including the
+// trailing '\n') under wmu. Single Write per call; safe under concurrent use.
+func (h *connHandle) write(b []byte) error {
+	h.wmu.Lock()
+	defer h.wmu.Unlock()
+	_, err := h.conn.Write(b)
+	return err
+}
+
+// NewServer constructs a server that will bind sockPath on Listen.
+// xrayInfo is used by Daemon.GetVersion (cached at startup).
+func NewServer(sockPath string, xrayInfo platform.XrayInfo, log *slog.Logger) *Server {
+	s := &Server{
+		sockPath: sockPath,
+		log:      log,
+		dispatch: newDispatch(xrayInfo),
+		conns:    make(map[*connHandle]struct{}),
+	}
+	// onSlowClient: close the offending connection so the renderer reconnects
+	// and refetches state via Tunnel.GetStatus.
+	s.subs = newSubscribers(log, func(id uint64) { s.closeBySubscriberID(id) })
+	return s
+}
+
+// Listen performs §8.1 socket hardening (stale-unlink + umask + chmod) and
+// starts the accept loop in a background goroutine. Returns once the listener
+// is bound; the accept goroutine continues until StopAccept + Close.
+func (s *Server) Listen(_ context.Context) error {
+	l, err := bindControlSocket(s.sockPath, s.log)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.listener = l
+	s.listening.Store(true)
+	s.mu.Unlock()
+	go s.acceptLoop()
+	return nil
+}
+
+// StopAccept closes the listener so no new connections are accepted. Existing
+// connections continue to serve until Close. Idempotent.
+func (s *Server) StopAccept() {
+	s.mu.Lock()
+	l := s.listener
+	s.listening.Store(false)
+	s.mu.Unlock()
+	if l != nil {
+		_ = l.Close()
+	}
+}
+
+// Close terminates every open connection. The socket file is unlinked
+// automatically by net.UnixListener.Close() (its unlink-on-close default for
+// listeners created by net.Listen("unix", ...) and net.ListenUnix is true),
+// but we explicitly os.Remove as a belt-and-braces guard against future
+// stdlib default changes. The ErrNotExist branch silences the expected case.
+// Idempotent.
+func (s *Server) Close() error {
+	var firstErr error
+	s.closeOnce.Do(func() {
+		s.StopAccept()
+		s.mu.Lock()
+		conns := make([]*connHandle, 0, len(s.conns))
+		for c := range s.conns {
+			conns = append(conns, c)
+		}
+		s.mu.Unlock()
+		for _, c := range conns {
+			_ = c.conn.Close()
+		}
+		if err := os.Remove(s.sockPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			firstErr = fmt.Errorf("unlink socket: %w", err)
+		}
+	})
+	return firstErr
+}
+
+// Broadcast pushes an event to every open subscriber. Non-blocking; called by
+// the state machine (Plan 3) and config registry (Plan 2). Plan 1 emits none.
+func (s *Server) Broadcast(evt Event) {
+	s.subs.broadcast(evt)
+}
+
+func (s *Server) acceptLoop() {
+	for {
+		c, err := s.listener.AcceptUnix()
+		if err != nil {
+			if !s.listening.Load() {
+				return // StopAccept closed us
+			}
+			// Treat transient accept errors as recoverable.
+			s.log.Warn("accept error", "err", err)
+			continue
+		}
+		go s.serveConn(c)
+	}
+}
+
+func (s *Server) serveConn(c *net.UnixConn) {
+	handle := &connHandle{conn: c}
+	s.registerConn(handle)
+	defer s.unregisterConn(handle)
+	defer c.Close()
+
+	if err := AuthAccept(c); err != nil {
+		if b, mErr := MarshalError(json.RawMessage(`null`), derr.AsDerr(err)); mErr == nil {
+			_ = handle.write(b)
+		}
+		return
+	}
+
+	// Subscribe this connection for events. The writer goroutine below pumps
+	// events onto the wire. Reader handles requests serially per connection.
+	// Both writers go through handle.write, which serializes via wmu.
+	events, closed, id, unsub := s.subs.subscribe()
+	handle.id = id
+	defer unsub()
+	go s.writerLoop(handle, events, closed)
+
+	sc := NewScanner(c)
+	for sc.Scan() {
+		line := sc.Bytes()
+		s.handleLine(handle, line)
+	}
+	if err := ScanErr(sc.Err()); err != nil && !errors.Is(err, io.EOF) {
+		if errors.Is(err, derr.ErrRequestTooLarge) {
+			if b, mErr := MarshalError(json.RawMessage(`null`), derr.ErrRequestTooLarge); mErr == nil {
+				_ = handle.write(b)
+			}
+		} else {
+			s.log.Warn("scan error on IPC connection", "err", err)
+		}
+	}
+}
+
+func (s *Server) handleLine(h *connHandle, line []byte) {
+	req, perr := DecodeRequest(line)
+	if perr != nil {
+		if b, mErr := MarshalError(json.RawMessage(`null`), derr.AsDerr(perr)); mErr == nil {
+			_ = h.write(b)
+		}
+		return
+	}
+	result, derrVal := s.dispatch.handle(context.Background(), req)
+	if derrVal != nil {
+		if b, mErr := MarshalError(req.ID, derrVal); mErr == nil {
+			_ = h.write(b)
+		}
+		return
+	}
+	if b, mErr := MarshalResponse(req.ID, result); mErr == nil {
+		_ = h.write(b)
+	}
+}
+
+// writerLoop pumps subscriber events to the wire under handle.write's mutex.
+// Exits cleanly when closed fires (subscriber.unsub) or when a write fails.
+// Selecting on both events and closed prevents the goroutine leak that would
+// happen if we only ranged over events (events is never closed by unsub).
+func (s *Server) writerLoop(h *connHandle, events <-chan Event, closed <-chan struct{}) {
+	for {
+		select {
+		case <-closed:
+			return
+		case evt := <-events:
+			b, err := MarshalNotification(evt.Method, evt.Params)
+			if err != nil {
+				continue
+			}
+			if err := h.write(b); err != nil {
+				return // connection write failed; reader loop will exit on EOF too
+			}
+		}
+	}
+}
+
+func (s *Server) registerConn(h *connHandle) {
+	s.mu.Lock()
+	s.conns[h] = struct{}{}
+	s.mu.Unlock()
+}
+
+func (s *Server) unregisterConn(h *connHandle) {
+	s.mu.Lock()
+	delete(s.conns, h)
+	s.mu.Unlock()
+}
+
+// closeBySubscriberID is the onSlowClient callback: find the connection
+// associated with the given subscriber id and close it. The reader/writer
+// loops then exit and clean up.
+func (s *Server) closeBySubscriberID(id uint64) {
+	s.mu.Lock()
+	var target *connHandle
+	for h := range s.conns {
+		if h.id == id {
+			target = h
+			break
+		}
+	}
+	s.mu.Unlock()
+	if target != nil {
+		_ = target.conn.Close()
+	}
+}
+
+// bindControlSocket implements §8.1: stale-socket unlink, umask 0117, listen,
+// post-listen chmod 0660. Returns the bound listener.
+func bindControlSocket(sockPath string, log *slog.Logger) (*net.UnixListener, error) {
+	if fi, err := os.Lstat(sockPath); err == nil {
+		if fi.Mode()&os.ModeSocket == 0 {
+			return nil, fmt.Errorf("%s exists and is not a socket; refusing to unlink", sockPath)
+		}
+		if err := os.Remove(sockPath); err != nil {
+			return nil, fmt.Errorf("unlink stale socket: %w", err)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("lstat %s: %w", sockPath, err)
+	}
+
+	// syscall.Umask is process-global, not goroutine-local. Setting it here
+	// affects every file created in the process until we restore via defer.
+	// SAFE BECAUSE: bindControlSocket is called from main() before the accept
+	// goroutine starts; no concurrent file creation can race. If a future
+	// refactor calls bindControlSocket from a non-main goroutine, revisit.
+	old := syscall.Umask(0o117)
+	defer syscall.Umask(old)
+
+	addr := &net.UnixAddr{Name: sockPath, Net: "unix"}
+	l, err := net.ListenUnix("unix", addr)
+	if err != nil {
+		return nil, fmt.Errorf("listen %s: %w", sockPath, err)
+	}
+	if err := os.Chmod(sockPath, 0o660); err != nil {
+		_ = l.Close()
+		return nil, fmt.Errorf("chmod socket: %w", err)
+	}
+	log.Info("ipc socket bound", "path", sockPath, "mode", "0660")
+	return l, nil
+}
