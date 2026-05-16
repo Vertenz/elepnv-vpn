@@ -13,9 +13,10 @@ var (
 	ErrConfigInvalid       = &Error{Code: -32004, Symbol: "config_invalid", Message: "xray rejected config"}
 	ErrConfigInUse         = &Error{Code: -32005, Symbol: "config_in_use", Message: "config is currently active; disconnect first"}
 	ErrUnauthorized        = &Error{Code: -32012, Symbol: "unauthorized", Message: "peer not in xrayd group"}
+	ErrValidationTimeout   = &Error{Code: -32013, Symbol: "validation_timeout", Message: "xray validation exceeded the daemon timeout"}
 	ErrDaemonShuttingDown  = &Error{Code: -32014, Symbol: "daemon_shutting_down", Message: "daemon is shutting down"}
-	ErrRequestTooLarge     = &Error{Code: -32016, Symbol: "request_too_large", Message: "request line exceeds max_request_bytes"}
 	ErrPathUnsafe          = &Error{Code: -32015, Symbol: "path_unsafe", Message: "config references a path outside the allowed roots"}
+	ErrRequestTooLarge     = &Error{Code: -32016, Symbol: "request_too_large", Message: "request line exceeds max_request_bytes"}
 	ErrInboundUnsafe       = &Error{Code: -32020, Symbol: "inbound_unsafe", Message: "config inbound failed safety policy"}
 
 	// JSON-RPC reserved.

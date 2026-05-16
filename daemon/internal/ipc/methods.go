@@ -206,5 +206,10 @@ func (d *dispatch) handleConfigsValidate(ctx context.Context, raw json.RawMessag
 	if err != nil {
 		return nil, asDerrOrInternal(err)
 	}
+	if res.Timeout {
+		// Surface as a typed error so the renderer can distinguish "we
+		// couldn't tell" from "xray rejected" and pick its own retry policy.
+		return nil, derr.ErrValidationTimeout
+	}
 	return res, nil
 }

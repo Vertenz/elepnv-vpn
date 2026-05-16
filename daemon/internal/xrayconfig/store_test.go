@@ -273,3 +273,41 @@ func TestConfigInfoMarshalsToWireShape(t *testing.T) {
 		t.Fatal("missing addedAt in wire shape")
 	}
 }
+
+func TestListIgnoresStagingFiles(t *testing.T) {
+	// Regression for the phantom-config bug: a leftover <ulid>.json.staging
+	// from a crashed Add must NOT be returned by List as a valid ConfigInfo.
+	// .staging files exist only between renameio.WriteFile and the final
+	// os.Rename inside Add.
+	store, dir := newStore(t, "exit 0\n")
+	const stagingName = "01HX7N9KQ8R3JCBVB6Z3K9V4FK.json.staging"
+	if err := os.WriteFile(filepath.Join(dir, stagingName), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	infos, err := store.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(infos) != 0 {
+		t.Fatalf("List returned staging file as a valid config: %v", infos)
+	}
+}
+
+func TestAddSurfacesValidationTimeoutAsTypedError(t *testing.T) {
+	// Regression for spec §9.2 -32013: when xray validation exceeds the
+	// daemon's timeout, Store.Add must return ErrValidationTimeout (NOT
+	// the generic ErrConfigInvalid). The IPC dispatcher relies on this
+	// typed error to give renderers a different retry policy than rejection.
+	store, dir := newStore(t, "sleep 30\n")
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	_, err := store.Add(ctx, []byte(validCfg))
+	if !errors.Is(err, derr.ErrValidationTimeout) {
+		t.Fatalf("err = %v, want ErrValidationTimeout", err)
+	}
+	// The staging file must also be cleaned up.
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 0 {
+		t.Fatalf("staging not cleaned after timeout, dir has: %v", entries)
+	}
+}

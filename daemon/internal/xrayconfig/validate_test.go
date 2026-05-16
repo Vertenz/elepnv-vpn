@@ -9,10 +9,23 @@ import (
 	"time"
 )
 
+// requirePOSIXShell skips the test on platforms where /bin/sh is unavailable
+// (Windows). Validate's SysProcAttr.Setpgid + SIGKILL on negative PID is a
+// POSIX construct and the test scripts use POSIX shell syntax — keeping the
+// guard explicit prevents Plan-3 contributors from accidentally extending
+// this test family to a platform where it can't run.
+func requirePOSIXShell(t *testing.T) {
+	t.Helper()
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skipf("no POSIX shell at /bin/sh: %v", err)
+	}
+}
+
 // fakeXray writes a small shell script to dir/xray that exits with a chosen
 // code and prints stderr; returns the absolute script path.
 func fakeXray(t *testing.T, dir, body string) string {
 	t.Helper()
+	requirePOSIXShell(t)
 	path := filepath.Join(dir, "xray")
 	script := "#!/bin/sh\n" + body
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
@@ -95,6 +108,9 @@ func TestValidateReportsTimeout(t *testing.T) {
 	}
 	if got.OK {
 		t.Fatalf("OK = true on timeout, want false")
+	}
+	if !got.Timeout {
+		t.Fatalf("Timeout = false, want true (the IPC handler keys on this to surface ErrValidationTimeout)")
 	}
 	if !strings.Contains(strings.ToLower(got.Error), "time") {
 		t.Fatalf("Error = %q, want a timeout-y message", got.Error)

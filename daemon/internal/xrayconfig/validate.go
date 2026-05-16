@@ -11,10 +11,16 @@ import (
 
 // ValidateResult is the structured result of one `xray run -test` invocation.
 // Mirrors the wire shape of Configs.Validate's RPC reply (§8.4).
+//
+// Timeout is true when the daemon's validateTimeout fired instead of xray
+// reporting a verdict. The IPC handler translates this into a typed
+// ErrValidationTimeout (-32013) so the renderer can distinguish "config was
+// rejected" from "we couldn't tell" and retry policy can differ.
 type ValidateResult struct {
-	OK     bool   `json:"ok"`
-	Error  string `json:"error,omitempty"`
-	Stderr string `json:"stderr,omitempty"`
+	OK      bool   `json:"ok"`
+	Error   string `json:"error,omitempty"`
+	Stderr  string `json:"stderr,omitempty"`
+	Timeout bool   `json:"timeout,omitempty"`
 }
 
 // validateTimeout caps each `xray run -test` call. xray-core parser typically
@@ -56,7 +62,7 @@ func Validate(ctx context.Context, xrayPath, cfgPath string) (ValidateResult, er
 	case runErr == nil:
 		return ValidateResult{OK: true}, nil
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		return ValidateResult{OK: false, Error: "validation timed out"}, nil
+		return ValidateResult{OK: false, Timeout: true, Error: "validation timed out"}, nil
 	default:
 		captured := stderr.String()
 		return ValidateResult{

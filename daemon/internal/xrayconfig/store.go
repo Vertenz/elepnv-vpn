@@ -76,15 +76,28 @@ func NewStore(dir, xrayPath, expectedSocksAddr string) *Store {
 	}
 }
 
+// stagingSuffix is appended to the ULID filename while the staged config is
+// being validated. List excludes it (it doesn't end in ".json"), so a
+// concurrent Configs.List call cannot observe a phantom ID that may yet
+// fail validation.
+const stagingSuffix = ".staging"
+
 // Add performs, in strict order:
 //
 //  1. checkPathSafety(jsonBytes)                        (§6.6; subsumes json.Valid via Unmarshal)
 //  2. checkInboundSafety(jsonBytes, expectedSocksAddr)  (§6.7)
-//  3. ulid.Make() + atomic write to <ulid>.json
-//  4. `xrayPath run -test -c <stored>`
-//  5. On success: keep file. On failure: unlink it.
+//  3. os.MkdirAll(dir, 0o700)
+//  4. ulid.New() (entropy read may fail under sandbox; propagated, never panicked)
+//  5. atomic write to <ulid>.json.staging (renameio + WithStaticPermissions=0o600)
+//  6. `xrayPath run -test -c <staging>`
+//  7. On success: os.Rename staging → <ulid>.json. On failure: unlink staging.
 //
-// Steps 1-2 reject without spawning any subprocess — cheap and safe.
+// Steps 1-3 reject without spawning any subprocess — cheap and safe. The
+// staging suffix matters: between write and validate the file exists on
+// disk; if we wrote directly to <ulid>.json a concurrent List would see a
+// not-yet-validated config and the caller could act on an ID that we will
+// shortly delete. List skips anything not ending in ".json", so staging is
+// invisible to clients.
 func (s *Store) Add(ctx context.Context, jsonBytes []byte) (ULID, error) {
 	if err := checkPathSafety(jsonBytes); err != nil {
 		return ULID{}, err
@@ -96,28 +109,44 @@ func (s *Store) Add(ctx context.Context, jsonBytes []byte) (ULID, error) {
 		return ULID{}, fmt.Errorf("ensure config dir: %w", err)
 	}
 
-	id := s.makeULID()
+	id, err := s.makeULID()
+	if err != nil {
+		return ULID{}, derr.ErrInternal.With(fmt.Errorf("ulid: %w", err))
+	}
 	finalPath := s.pathFor(id)
-	// renameio writes to a sibling temp file then renames atomically; on any
-	// error from WriteFile the temp is cleaned up automatically.
+	stagingPath := finalPath + stagingSuffix
+
+	// renameio writes to its own internal temp file then renames atomically to
+	// stagingPath; on any error the temp is cleaned up automatically.
 	// WithStaticPermissions sets 0o600 ignoring the process umask, satisfying
 	// spec §6.1 rev-4 P1-4 which mandates exactly 0o600 regardless of umask.
-	if err := renameio.WriteFile(finalPath, jsonBytes, 0o600, renameio.WithStaticPermissions(0o600)); err != nil {
+	if err := renameio.WriteFile(stagingPath, jsonBytes, 0o600, renameio.WithStaticPermissions(0o600)); err != nil {
 		return ULID{}, fmt.Errorf("atomic write: %w", err)
 	}
 
-	res, err := Validate(ctx, s.xrayPath, finalPath)
-	if err != nil {
-		_ = os.Remove(finalPath)
-		return ULID{}, derr.ErrInternal.With(err)
+	res, vErr := Validate(ctx, s.xrayPath, stagingPath)
+	if vErr != nil {
+		_ = os.Remove(stagingPath)
+		return ULID{}, derr.ErrInternal.With(vErr)
+	}
+	if res.Timeout {
+		_ = os.Remove(stagingPath)
+		return ULID{}, derr.ErrValidationTimeout
 	}
 	if !res.OK {
-		_ = os.Remove(finalPath)
+		_ = os.Remove(stagingPath)
 		detail := derr.Detail{"summary": res.Error}
 		if res.Stderr != "" {
 			detail["stderr"] = res.Stderr
 		}
 		return ULID{}, derr.ErrConfigInvalid.WithDetail(detail).WithMessage(res.Error)
+	}
+
+	// Atomic publish. The staging file is now valid and ready to surface
+	// through List.
+	if err := os.Rename(stagingPath, finalPath); err != nil {
+		_ = os.Remove(stagingPath)
+		return ULID{}, fmt.Errorf("publish staging: %w", err)
 	}
 	return id, nil
 }
@@ -197,8 +226,12 @@ func (s *Store) pathFor(id ULID) string {
 	return filepath.Join(s.dir, id.String()+".json")
 }
 
-func (s *Store) makeULID() ULID {
+// makeULID returns a fresh monotonic ULID. The entropy source can fail under
+// pathological conditions (sandbox without /dev/urandom, fd exhaustion); we
+// propagate the error rather than panicking via ulid.MustNew, so a single
+// transient entropy hiccup doesn't take down the daemon.
+func (s *Store) makeULID() (ULID, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return ulid.MustNew(ulid.Timestamp(time.Now()), s.entropy)
+	return ulid.New(ulid.Timestamp(time.Now()), s.entropy)
 }
