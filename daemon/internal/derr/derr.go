@@ -65,9 +65,15 @@ func (e *Error) WithMessage(msg string) *Error {
 
 // WithDetail returns a copy of e with the given structured detail attached.
 // The detail surfaces in JSON()'s error.data.detail object.
+// The detail map is shallow-copied; callers retain ownership of their copy.
 func (e *Error) WithDetail(d Detail) *Error {
 	cp := *e
-	cp.detail = d
+	if d != nil {
+		cp.detail = make(Detail, len(d))
+		for k, v := range d {
+			cp.detail[k] = v
+		}
+	}
 	return &cp
 }
 

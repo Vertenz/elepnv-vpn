@@ -67,7 +67,7 @@ func TestPlan2SentinelsHaveStableSymbols(t *testing.T) {
 		{"config_malformed_json", derr.ErrConfigMalformedJSON, -32003, "config_malformed_json"},
 		{"config_invalid", derr.ErrConfigInvalid, -32004, "config_invalid"},
 		{"config_in_use", derr.ErrConfigInUse, -32005, "config_in_use"},
-		{"path_unsafe", derr.ErrPathUnsafe, -32019, "path_unsafe"},
+		{"path_unsafe", derr.ErrPathUnsafe, -32015, "path_unsafe"},
 		{"inbound_unsafe", derr.ErrInboundUnsafe, -32020, "inbound_unsafe"},
 	}
 	for _, c := range cases {
@@ -118,5 +118,8 @@ func TestNewInboundUnsafeEmbedsDetail(t *testing.T) {
 	detail := got["data"].(map[string]any)["detail"].(map[string]any)
 	if detail["pointer"] != "/inbounds/0/listen" {
 		t.Fatalf("detail.pointer = %v", detail["pointer"])
+	}
+	if detail["reason"] != `public bind not allowed: "0.0.0.0"` {
+		t.Fatalf("detail.reason = %v", detail["reason"])
 	}
 }
