@@ -82,6 +82,12 @@ func NewStore(dir, xrayPath, expectedSocksAddr string) *Store {
 // fail validation.
 const stagingSuffix = ".staging"
 
+// MaxConfigs is the per-registry cap from spec §8.3. The limit exists to bound
+// the directory-scan cost List() pays on each call; each entry is small (~few
+// KiB) so 1000 is generous in absolute terms. Declared as var (not const) so
+// tests can lower it without writing 1000 files.
+var MaxConfigs = 1000
+
 // Add performs, in strict order:
 //
 //  1. checkPathSafety(jsonBytes)                        (§6.6; subsumes json.Valid via Unmarshal)
@@ -107,6 +113,14 @@ func (s *Store) Add(ctx context.Context, jsonBytes []byte) (ULID, error) {
 	}
 	if err := os.MkdirAll(s.dir, 0o700); err != nil {
 		return ULID{}, fmt.Errorf("ensure config dir: %w", err)
+	}
+
+	n, err := s.countConfigs()
+	if err != nil {
+		return ULID{}, fmt.Errorf("count configs: %w", err)
+	}
+	if n >= MaxConfigs {
+		return ULID{}, derr.ErrConfigQuotaExceeded
 	}
 
 	id, err := s.makeULID()
@@ -234,4 +248,28 @@ func (s *Store) makeULID() (ULID, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return ulid.New(ulid.Timestamp(time.Now()), s.entropy)
+}
+
+// countConfigs returns the number of valid <ULID>.json entries in the registry.
+// Cheaper than List: no file reads, no sha256 hashing.
+func (s *Store) countConfigs() (int, error) {
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	n := 0
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		if _, err := ulid.ParseStrict(strings.TrimSuffix(name, ".json")); err != nil {
+			continue
+		}
+		n++
+	}
+	return n, nil
 }

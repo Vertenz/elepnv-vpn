@@ -292,6 +292,26 @@ func TestListIgnoresStagingFiles(t *testing.T) {
 	}
 }
 
+func TestAddRejectsBeyondMaxConfigs(t *testing.T) {
+	// Lower the cap for fast testing; restore on cleanup.
+	orig := xrayconfig.MaxConfigs
+	xrayconfig.MaxConfigs = 3
+	t.Cleanup(func() { xrayconfig.MaxConfigs = orig })
+
+	store, _ := newStore(t, "exit 0\n")
+	ctx := context.Background()
+
+	for i := 0; i < 3; i++ {
+		if _, err := store.Add(ctx, []byte(validCfg)); err != nil {
+			t.Fatalf("Add #%d (under cap): %v", i+1, err)
+		}
+	}
+	_, err := store.Add(ctx, []byte(validCfg))
+	if !errors.Is(err, derr.ErrConfigQuotaExceeded) {
+		t.Fatalf("Add #4 err = %v, want ErrConfigQuotaExceeded", err)
+	}
+}
+
 func TestAddSurfacesValidationTimeoutAsTypedError(t *testing.T) {
 	// Regression for spec §9.2 -32013: when xray validation exceeds the
 	// daemon's timeout, Store.Add must return ErrValidationTimeout (NOT
