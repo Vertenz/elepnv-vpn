@@ -363,6 +363,23 @@ func TestConfigsAddReturnsXrayNotFoundWhenXrayMissing(t *testing.T) {
 	}
 }
 
+func TestConfigsListReturnsXrayNotFoundWhenXrayMissing(t *testing.T) {
+	d := newDispatch(platform.XrayInfo{Found: false}, nil, &recorderBroadcaster{}, nil, nil)
+	_, derrVal := d.handle(context.Background(), Request{Method: "Configs.List", Params: nil})
+	if !errors.Is(derrVal, derr.ErrXrayNotFound) {
+		t.Fatalf("err = %v, want ErrXrayNotFound", derrVal)
+	}
+}
+
+func TestConfigsRemoveReturnsXrayNotFoundWhenXrayMissing(t *testing.T) {
+	d := newDispatch(platform.XrayInfo{Found: false}, nil, &recorderBroadcaster{}, nil, nil)
+	params, _ := json.Marshal(map[string]any{"id": "01HX7N9KQ8R3JCBVB6Z3K9V4FK"})
+	_, derrVal := d.handle(context.Background(), Request{Method: "Configs.Remove", Params: params})
+	if !errors.Is(derrVal, derr.ErrXrayNotFound) {
+		t.Fatalf("err = %v, want ErrXrayNotFound", derrVal)
+	}
+}
+
 func TestTunnelConnectHonorsRateLimit(t *testing.T) {
 	fm := &fakeMachine{}
 	d := newDispatch(platform.XrayInfo{Found: true}, nil, &recorderBroadcaster{}, fm, nil)

@@ -147,6 +147,9 @@ type listResult struct {
 }
 
 func (d *dispatch) handleConfigsList(_ context.Context, _ json.RawMessage) (any, *derr.Error) {
+	if !d.xrayInfo.Found {
+		return nil, derr.ErrXrayNotFound
+	}
 	if d.configs == nil {
 		return nil, derr.ErrInternal.WithMessage("config store not wired")
 	}
@@ -169,6 +172,9 @@ type removeResult struct {
 }
 
 func (d *dispatch) handleConfigsRemove(_ context.Context, raw json.RawMessage) (any, *derr.Error) {
+	if !d.xrayInfo.Found {
+		return nil, derr.ErrXrayNotFound
+	}
 	if d.configs == nil {
 		return nil, derr.ErrInternal.WithMessage("config store not wired")
 	}

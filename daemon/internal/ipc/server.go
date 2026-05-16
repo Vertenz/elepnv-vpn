@@ -243,8 +243,19 @@ func (s *Server) serveConn(c *net.UnixConn) {
 	defer s.unregisterConn(handle)
 	defer c.Close()
 
+	// If auth fails, we write a JSON-RPC error response with id:null (no
+	// request has been received yet) and close.  The renderer must handle a
+	// frame with id:null arriving before any RPC as a connection-level
+	// "unauthorized" event (spec §8.6).
 	if err := AuthAccept(c); err != nil {
-		if b, mErr := MarshalError(json.RawMessage(`null`), derr.AsDerr(err)); mErr == nil {
+		de := derr.AsDerr(err)
+		if de == nil {
+			// AuthAccept always returns *derr.Error today, but be defensive: a
+			// future change returning a plain error would otherwise panic at
+			// de.JSON() below.
+			de = derr.ErrInternal.With(err)
+		}
+		if b, mErr := MarshalError(json.RawMessage(`null`), de); mErr == nil {
 			_ = handle.write(b)
 		} else {
 			s.log.Error("marshal auth-error response failed", "err", mErr)
