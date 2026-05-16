@@ -25,10 +25,10 @@ type procInfo struct {
 
 // recoveryScan reaps any xray processes attributable to a prior daemon run.
 // Spec §11.1: triple-signal ownership (uid=xrayd + exe basename "xray" +
-// cmdline contains /var/lib/xrayd/configs/) protects multi-user hosts from
-// killing unrelated xray instances.
-func recoveryScan(ctx context.Context, log *slog.Logger) error {
-	procs, err := listOurXray()
+// cmdline contains configsDir/) protects multi-user hosts from killing
+// unrelated xray instances.
+func recoveryScan(ctx context.Context, log *slog.Logger, configsDir string) error {
+	procs, err := listOurXray(configsDir)
 	if err != nil {
 		return fmt.Errorf("scan /proc: %w", err)
 	}
@@ -47,13 +47,19 @@ func recoveryScan(ctx context.Context, log *slog.Logger) error {
 	return nil
 }
 
-func listOurXray() ([]procInfo, error) {
+func listOurXray(configsDir string) ([]procInfo, error) {
 	xrayd, err := user.Lookup("xrayd")
 	if err != nil {
 		// User not set up — no daemon-spawned children possible.
 		return nil, nil
 	}
 	wantUid, _ := strconv.Atoi(xrayd.Uid)
+
+	// Match the trailing slash so /var/lib/xrayd/configsxyz doesn't false-match.
+	needle := configsDir
+	if !strings.HasSuffix(needle, "/") {
+		needle += "/"
+	}
 
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
@@ -75,7 +81,7 @@ func listOurXray() ([]procInfo, error) {
 		if filepath.Base(p.exe) != "xray" {
 			continue
 		}
-		if !strings.Contains(p.cmdline, "/var/lib/xrayd/configs/") {
+		if !strings.Contains(p.cmdline, needle) {
 			continue
 		}
 		out = append(out, *p)

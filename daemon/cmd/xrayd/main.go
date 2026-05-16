@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -97,7 +98,7 @@ func run() int {
 	}
 
 	// recovery scan BEFORE binding socket (spec §11.4).
-	if err := recoveryScan(appCtx, log); err != nil {
+	if err := recoveryScan(appCtx, log, cfgDir); err != nil {
 		log.Error("recoveryScan failed; continuing", "err", err)
 	}
 
@@ -112,6 +113,29 @@ func run() int {
 	}
 
 	stateStore := state.NewStore(filepath.Join(stateDir, "state.json"))
+
+	// Spec §11.2: state.json is a UX hint; after the scan, the live state is
+	// definitively Disconnected. Reset the file so the renderer doesn't see
+	// stale Connected/ConfigID until the first natural transition.
+	if _, err := stateStore.Load(); err != nil {
+		if errors.Is(err, state.ErrCorrupt) || errors.Is(err, state.ErrTooNew) {
+			if qErr := stateStore.Quarantine(); qErr != nil {
+				log.Error("state.json quarantine failed; continuing", "err", qErr)
+			} else {
+				log.Warn("state.json was corrupt/too-new; quarantined", "err", err)
+			}
+		}
+		// ErrNotExist (first-run) and other errors fall through — Save below
+		// will create a fresh file.
+	}
+	postRecoveryState := state.State{
+		Version: state.CurrentVersion,
+		State:   state.StateDisconnected,
+		Since:   time.Now(),
+	}
+	if err := stateStore.Save(postRecoveryState); err != nil {
+		log.Warn("state.json post-recovery reset failed; continuing", "err", err)
+	}
 
 	// Supervisor + Machine — only when xray is available. The Machine is the
 	// single mutator of TunnelState; the supervisor is its only path to spawn

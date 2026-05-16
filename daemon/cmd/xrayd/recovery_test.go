@@ -4,8 +4,8 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"os"
 	"os/exec"
+	"os/user"
 	"runtime"
 	"syscall"
 	"testing"
@@ -75,10 +75,10 @@ func TestRecoveryScanReturnsNilWhenNoXrayd(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("linux-only")
 	}
-	if _, err := os.Stat("/etc/passwd"); err != nil {
-		t.Skip("no /etc/passwd to consult")
+	if _, err := user.Lookup("xrayd"); err != nil {
+		t.Skipf("xrayd system user not present: %v", err)
 	}
-	if err := recoveryScan(context.Background(), discardLogger()); err != nil {
+	if err := recoveryScan(context.Background(), discardLogger(), "/var/lib/xrayd/configs"); err != nil {
 		t.Fatalf("recoveryScan: %v", err)
 	}
 }
