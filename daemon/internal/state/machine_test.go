@@ -185,6 +185,43 @@ func TestPostCmdReturnsFalseWhenCtxAlreadyCancelled(t *testing.T) {
 	}
 }
 
+// TestDrainOnShutdownRunsFullHandleShutdown verifies that drainOnShutdown
+// calls the full handleShutdown body (armed cleanup, state post, done-close)
+// for any cmdShutdown it finds queued. This covers the race where m.ctx is
+// cancelled before the actor processes cmdShutdown — drainOnShutdown must not
+// merely close c.done without running cleanup.
+//
+// The test drives drainOnShutdown directly (no goroutine) so it is
+// deterministic and does not rely on goroutine scheduling.
+func TestDrainOnShutdownRunsFullHandleShutdown(t *testing.T) {
+	m := newTestMachine(t)
+	cleanupCalled := false
+	m.armed = newCleanupStack()
+	m.armed.push("test-cleanup", func() { cleanupCalled = true })
+
+	// Pre-populate cmds with a cmdShutdown, bypassing Shutdown()'s guards.
+	// This simulates the case where ctx was cancelled before the actor
+	// dequeued the command.
+	done := make(chan struct{})
+	m.cmds <- cmdShutdown{done: done}
+
+	// Call drainOnShutdown directly — it runs on the "actor goroutine" in
+	// production; here we call it from the test goroutine which is safe since
+	// the actor is not running.
+	m.drainOnShutdown()
+
+	select {
+	case <-done:
+		// handleShutdown closed done — full teardown ran
+	default:
+		t.Fatal("drainOnShutdown did not close cmdShutdown.done")
+	}
+
+	if !cleanupCalled {
+		t.Fatal("armed cleanup did not run in drainOnShutdown cmdShutdown path")
+	}
+}
+
 // Compile-time check: childExitCC select branch must read from supervisor.Child.
 // This test exercises the branch via a context-driven path to ensure
 // childExitCC = nil prevents the select from spinning.

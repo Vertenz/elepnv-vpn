@@ -170,7 +170,17 @@ func (m *Machine) drainOnShutdown() {
 	for {
 		select {
 		case cmd := <-m.cmds:
-			replyShuttingDown(cmd)
+			// cmdShutdown gets the full handleShutdown treatment: it stops the xray
+			// child, runs armed cleanup, posts terminal Disconnected, and closes
+			// c.done. This matters when m.ctx is cancelled racing with cmdShutdown
+			// (e.g. shutCtx expiring in main.go before the actor processed the cmd)
+			// — we still need to honor the spec §3.12 cleanup guarantee.
+			// drainOnShutdown runs on the actor goroutine so the call is safe.
+			if c, ok := cmd.(cmdShutdown); ok {
+				m.handleShutdown(c)
+			} else {
+				replyShuttingDown(cmd)
+			}
 		default:
 			return
 		}
@@ -192,12 +202,8 @@ func replyShuttingDown(cmd command) {
 		default:
 		}
 	case cmdShutdown:
-		// shutdownOnce on the caller side guarantees at most one
-		// cmdShutdown is ever sent. handle() consumes it serially before
-		// drainOnShutdown runs, so any cmdShutdown we see here is one
-		// that was not yet processed — c.done is therefore guaranteed
-		// not yet closed. A panic from double-close would indicate a
-		// real ownership bug, so we let it surface.
+		// This case is now unreachable: drainOnShutdown intercepts cmdShutdown
+		// before calling replyShuttingDown. Kept for exhaustiveness.
 		if c.done != nil {
 			close(c.done)
 		}
