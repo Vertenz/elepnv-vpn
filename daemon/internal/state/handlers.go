@@ -113,6 +113,9 @@ func (m *Machine) handleDisconnect(c cmdDisconnect) {
 	case StateConnected, StateError:
 		if m.armed == nil {
 			c.reply <- nil
+			m.child = nil
+			m.childExitCC = nil
+			m.activeID = xrayconfig.ULID{}
 			m.postState(ConnStatus{State: StateDisconnected, Since: time.Now()})
 			return
 		}
@@ -155,10 +158,10 @@ func (m *Machine) handleChildExit(exit supervisor.Exit) {
 
 	armed := m.armed
 	m.armed = nil
-	m.activeID = xrayconfig.ULID{}
 	if armed != nil {
 		armed.run(context.Background())
 	}
+	m.activeID = xrayconfig.ULID{}
 
 	m.postState(ConnStatus{
 		State:   StateError,
@@ -168,11 +171,13 @@ func (m *Machine) handleChildExit(exit supervisor.Exit) {
 	m.armAutoRevert(m.deps.cfg.AutoRevertDelay)
 }
 
-// truncate clips s to at most n bytes, appending an ellipsis on truncation.
-// Used by handleChildExit to bound the stderr included in state messages.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
+	}
+	// Walk back to the nearest rune boundary so we don't split a multi-byte UTF-8 sequence.
+	for n > 0 && s[n]&0xC0 == 0x80 {
+		n--
 	}
 	return s[:n] + "…"
 }
@@ -184,7 +189,8 @@ func (m *Machine) handleShutdown(c cmdShutdown) {
 		m.cancelConnect()
 		m.cancelConnect = nil
 	}
-	// Run armed cleanup (typically the Stop-xray entry from doConnect).
+	// A normal Disconnect would have disarmed m.armed; on shutdown we may still
+	// hold the doConnect Stop-xray entry and must run it to avoid leaking the child.
 	if m.armed != nil {
 		m.armed.run(context.Background())
 		m.armed = nil

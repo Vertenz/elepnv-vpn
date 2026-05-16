@@ -104,12 +104,13 @@ func TestAutoRevertFiresFromErrorToDisconnected(t *testing.T) {
 	m.cancel()
 	<-m.doneCh
 	m.deps.cfg.AutoRevertDelay = 50 * time.Millisecond
-	// Re-start the actor on a fresh ctx for this test.
+	// The prior ctx is cancelled and doneCh closed — we must swap in fresh
+	// ones before Start. We set m.state and arm the timer here (still pre-Start)
+	// to avoid racing on those fields once the actor goroutine begins.
 	ctx, cancel := context.WithCancel(context.Background())
 	m.ctx, m.cancel = ctx, cancel
 	m.doneCh = make(chan struct{})
 
-	// Set state and arm timer while actor is stopped — no races.
 	m.state = ConnStatus{State: StateError}
 	m.armAutoRevert(m.deps.cfg.AutoRevertDelay)
 
