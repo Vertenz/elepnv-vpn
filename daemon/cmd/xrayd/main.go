@@ -8,13 +8,17 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/coreos/go-systemd/v22/daemon"
 
 	"elepn/daemon/internal/ipc"
 	"elepn/daemon/internal/platform"
+	"elepn/daemon/internal/state"
+	"elepn/daemon/internal/supervisor"
 	"elepn/daemon/internal/version"
 	"elepn/daemon/internal/xrayconfig"
 )
@@ -54,6 +58,10 @@ func run() int {
 	if expectedSocksAddr == "" {
 		expectedSocksAddr = "127.0.0.1:10808"
 	}
+	stateDir := os.Getenv("XRAYD_STATE_DIR")
+	if stateDir == "" {
+		stateDir = "/var/lib/xrayd"
+	}
 	// Fail fast on misconfigured env so the operator sees the problem at
 	// startup; otherwise every Configs.Add would silently surface a
 	// less-actionable internal_error response.
@@ -86,6 +94,11 @@ func run() int {
 			"fix", "sudo groupadd --system xrayd && sudo usermod -aG xrayd $USER")
 	}
 
+	// recovery scan BEFORE binding socket (spec §11.4).
+	if err := recoveryScan(appCtx, log); err != nil {
+		log.Error("recoveryScan failed; continuing", "err", err)
+	}
+
 	var store *xrayconfig.Store
 	if xrayInfo.Found {
 		store = xrayconfig.NewStore(cfgDir, xrayInfo.Path, expectedSocksAddr)
@@ -96,7 +109,28 @@ func run() int {
 		log.Warn("xray not found; Configs.Add will return internal_error until xray is installed")
 	}
 
-	srv := ipc.NewServer(sockPath, xrayInfo, store, nil /* TODO Task 14: wire Machine */, log)
+	stateStore := state.NewStore(filepath.Join(stateDir, "state.json"))
+
+	// Supervisor + Machine — only when xray is available. The Machine is the
+	// single mutator of TunnelState; the supervisor is its only path to spawn
+	// the child.
+	var tunnelMachine ipc.TunnelMachine
+	var machine *state.Machine
+	if xrayInfo.Found && store != nil {
+		sup := &supervisor.Supervisor{}
+		cfg := state.Config{
+			SocksAddr:       expectedSocksAddr,
+			ConnectDeadline: 15 * time.Second,
+			AutoRevertDelay: 5 * time.Second,
+			StateJSONPath:   filepath.Join(stateDir, "state.json"),
+		}
+		machine = state.NewMachine(store, sup, stateStore, cfg, log)
+		machine.Start()
+		tunnelMachine = machine
+		log.Info("state machine ready", "socksAddr", expectedSocksAddr)
+	}
+
+	srv := ipc.NewServer(sockPath, xrayInfo, store, tunnelMachine, log)
 	if err := srv.Listen(appCtx); err != nil {
 		log.Error("ipc listen failed", "err", err, "sock", sockPath)
 		return exitUnrecoverable
@@ -120,10 +154,21 @@ func run() int {
 		log.Debug("sd_notify STOPPING=1 sent")
 	}
 
-	// Plan 1 has no Machine yet. In Plan 3, the next two lines become
-	//   shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	//   _ = machine.Shutdown(shutCtx)
+	// Shutdown order matters (spec §12):
+	//   1. Stop accepting new connections so no new RPCs arrive.
+	//   2. Shutdown the Machine — runs armed cleanup, stops xray, posts terminal
+	//      Disconnected state, closes the subscriber channel.
+	//   3. Close the IPC server — drains in-flight handlers, closes the listener.
 	srv.StopAccept()
+
+	if machine != nil {
+		shutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if err := machine.Shutdown(shutCtx); err != nil {
+			log.Warn("machine shutdown error", "err", err)
+		}
+		cancel()
+	}
+
 	if err := srv.Close(); err != nil {
 		log.Warn("ipc server close error", "err", err)
 	}
