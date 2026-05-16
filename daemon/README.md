@@ -92,7 +92,9 @@ by hand via `socat`, trim down to one SOCKS5 inbound.
 
 The daemon refuses any filesystem path under a path-bearing JSON key
 (`certificateFile`, `keyFile`, `caCertificateFile`, `access`, `error`,
-`path`, `dat`, `file`) that does not resolve under `/usr/local/share/xray/`.
+`dat`, `file`) that does not resolve under `/usr/local/share/xray/`.
+Note: `streamSettings.*Settings.path` (WebSocket, gRPC, XHTTP) is accepted
+as-is because xray treats it as a URL path, not a filesystem path.
 This is enforced regardless of what the path "looks like" — `"cert.pem"`,
 `"/etc/letsencrypt/live/<domain>/fullchain.pem"`, and `"~/cert.pem"` are
 all rejected. The `ext:` selector is banned entirely.
@@ -113,6 +115,56 @@ Two implications you'll hit immediately:
 Path-bearing files must EXIST at `Configs.Add` time (the daemon resolves
 symlinks and rejects missing targets). Plan 4 may relax this for lazy-load
 cases; for v1 the admin pre-stages.
+
+## Deployment on Ubuntu (manual)
+
+For the .deb path use the postinst in `packaging/deb/`. For manual install on a workstation:
+
+### 1. Install xray-core
+
+The daemon requires xray-core. The official installer puts it at `/usr/local/bin/xray`:
+
+```bash
+bash <(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh) install
+```
+
+The XTLS installer also enables its own `xray.service` — disable it so it doesn't fight xrayd
+for the SOCKS port:
+
+```bash
+sudo systemctl disable --now xray.service xray@.service
+```
+
+### 2. Build the daemon
+
+```bash
+cd daemon
+go build -ldflags "-X elepn/daemon/internal/version.Version=$(git describe --tags --always)" \
+    -o ../dist/xrayd ./cmd/xrayd/
+```
+
+### 3. Install + enable
+
+```bash
+sudo ./packaging/install.sh
+```
+
+This creates the xrayd system user/group, installs the binary to `/usr/local/bin/xrayd`,
+installs the hardened unit to `/etc/systemd/system/xrayd.service`, enables and starts it,
+and adds your user to the xrayd group.
+
+### 4. Log out and back in
+
+Group membership only takes effect on a new login session.
+
+### 5. Verify
+
+```bash
+systemctl status xrayd
+socat - UNIX-CONNECT:/run/xrayd/control.sock <<< '{"jsonrpc":"2.0","id":"1","method":"Daemon.Ping"}'
+```
+
+You should see `{"ok":true}` in the response.
 
 ## Conflicts with the official `xray.service`
 
