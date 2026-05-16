@@ -1,11 +1,11 @@
 [Unit]
 Description=elepn xray-core privileged helper daemon
+Documentation=https://github.com/elepn/elepn
 After=network.target
-# Documentation URL intentionally omitted — set in packaging step
 
 [Service]
 Type=notify
-ExecStart=/usr/bin/xrayd
+ExecStart=/usr/local/bin/xrayd
 Restart=on-failure
 RestartSec=2s
 RestartPreventExitStatus=2
@@ -30,7 +30,7 @@ RuntimeDirectory=xrayd
 RuntimeDirectoryMode=0750
 StateDirectory=xrayd
 StateDirectoryMode=0700
-ReadWritePaths=/run/xrayd /var/lib/xrayd
+UMask=0077
 
 # Kernel & namespaces
 ProtectKernelTunables=yes
