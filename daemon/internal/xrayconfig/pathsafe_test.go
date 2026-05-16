@@ -40,18 +40,6 @@ func TestCheckPathSafetyRejectsHomePath(t *testing.T) {
 	}
 }
 
-func TestCheckPathSafetyExtPrefixInRoutingPathKeyIsAllowed(t *testing.T) {
-	// Before the fix, "path" was in pathBearingKeys, so an ext: value there was
-	// rejected by validatePathValue. After the fix, routing.rules[*].path is a
-	// URL path field — not filesystem-bearing — and ext: in a URL path is
-	// semantically odd but not a security risk (looksSuspicious won't flag it).
-	withAllowedRoot(t, t.TempDir())
-	cfg := []byte(`{"routing":{"rules":[{"path":"ext:Geosite:cn-domain.dat"}]}}`)
-	if err := checkPathSafety(cfg); err != nil {
-		t.Fatalf("ext: in routing path field should now be accepted, got: %v", err)
-	}
-}
-
 func TestCheckPathSafetyRejectsDotDot(t *testing.T) {
 	dir := t.TempDir()
 	withAllowedRoot(t, dir)
@@ -90,6 +78,16 @@ func TestCheckPathSafetyAllowsDSLInUnknownKey(t *testing.T) {
 	cfg := []byte(`{"routing":{"rules":[{"domain":["geosite:cn"]}]}}`)
 	if err := checkPathSafety(cfg); err != nil {
 		t.Fatalf("expected nil for DSL in non-path-bearing key, got %v", err)
+	}
+}
+
+func TestCheckPathSafetyRejectsExtPrefixGlobally(t *testing.T) {
+	withAllowedRoot(t, t.TempDir())
+	// ext: in a non-path-bearing key (routing rule domain list) — must
+	// still be rejected per spec §6.6 v1 ban on external-file loading.
+	cfg := []byte(`{"routing":{"rules":[{"domain":["ext:geosite.dat:cn"]}]}}`)
+	if err := checkPathSafety(cfg); !errors.Is(err, derr.ErrPathUnsafe) {
+		t.Fatalf("err = %v, want ErrPathUnsafe (ext: should be globally banned)", err)
 	}
 }
 

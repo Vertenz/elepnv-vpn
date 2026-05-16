@@ -90,6 +90,11 @@ func walk(node any, ptr string) error {
 			}
 		}
 	case string:
+		// ext: is xray's "load external file" selector; spec §6.6 bans it
+		// globally in v1 regardless of where in the JSON tree it appears.
+		if strings.HasPrefix(v, "ext:") {
+			return derr.NewPathUnsafe(ptr, v)
+		}
 		// Defense-in-depth: flag strings that look like attempts to reach
 		// sensitive filesystem paths at JSON positions xray doesn't expect.
 		if looksSuspicious(v) && !isAllowedDSL(v) && !isAllowedAbsolutePath(v) {
