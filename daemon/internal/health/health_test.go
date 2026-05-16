@@ -84,6 +84,13 @@ func TestNewClampsIntervalSeconds(t *testing.T) {
 	}
 }
 
+func TestNewClampsBelowMinimumToMin(t *testing.T) {
+	h := New(Config{SocksAddr: "x", IntervalSeconds: 3}, discardLog())
+	if got := h.GetConfig().IntervalSeconds; got != 5 {
+		t.Fatalf("interval below min = %d, want 5", got)
+	}
+}
+
 func TestProbeReturnsErrWhenDisabled(t *testing.T) {
 	h := New(Config{SocksAddr: "127.0.0.1:1"}, discardLog())
 	_, err := h.Probe(context.Background())

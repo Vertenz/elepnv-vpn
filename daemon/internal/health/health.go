@@ -56,10 +56,13 @@ type Health struct {
 // New constructs a Health bound to xray's local SOCKS inbound at cfg.SocksAddr.
 // The endpoint and interval default to the spec §8.5 values if blank/out-of-range.
 func New(cfg Config, log *slog.Logger) *Health {
-	if cfg.IntervalSeconds < 5 {
-		cfg.IntervalSeconds = 10
-	} else if cfg.IntervalSeconds > 600 {
-		cfg.IntervalSeconds = 600
+	switch {
+	case cfg.IntervalSeconds == 0:
+		cfg.IntervalSeconds = 10 // unset → spec default
+	case cfg.IntervalSeconds < 5:
+		cfg.IntervalSeconds = 5 // clamp to spec minimum
+	case cfg.IntervalSeconds > 600:
+		cfg.IntervalSeconds = 600 // clamp to spec maximum
 	}
 	if cfg.Endpoint == "" {
 		cfg.Endpoint = "http://www.gstatic.com/generate_204"
@@ -171,10 +174,12 @@ func (h *Health) runOnce(ctx context.Context) Status {
 	start := time.Now()
 	req, err := http.NewRequestWithContext(ctx, "GET", h.cfg.Endpoint, nil)
 	if err != nil {
+		h.log.Debug("health probe failed building request", "endpoint", h.cfg.Endpoint, "err", err)
 		return Status{Health: StateOffline, LastChecked: start}
 	}
 	resp, err := h.cli.Do(req)
 	if err != nil {
+		h.log.Debug("health probe failed", "endpoint", h.cfg.Endpoint, "err", err)
 		return Status{Health: StateOffline, LastChecked: start}
 	}
 	defer resp.Body.Close()
