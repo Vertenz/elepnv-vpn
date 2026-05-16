@@ -72,7 +72,9 @@ func doConnect(
 		result.err = derr.WrapDiedEarly(err)
 		return
 	}
-	if err := supervisor.AwaitSocksReady(ctx, d.cfg.SocksAddr, 5*time.Second); err != nil {
+	// 10s budget covers xray's cold-cache geodata indexing on HDD (3 MB geosite.dat
+	// with 60k+ entries) before the SOCKS inbound binds.
+	if err := supervisor.AwaitSocksReady(ctx, d.cfg.SocksAddr, 10*time.Second); err != nil {
 		result.err = derr.WrapInbound(err)
 		return
 	}

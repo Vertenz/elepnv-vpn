@@ -146,7 +146,7 @@ func run() int {
 		sup := &supervisor.Supervisor{}
 		cfg := state.Config{
 			SocksAddr:       expectedSocksAddr,
-			ConnectDeadline: 15 * time.Second,
+			ConnectDeadline: 25 * time.Second,
 			AutoRevertDelay: 5 * time.Second,
 			StateJSONPath:   filepath.Join(stateDir, "state.json"),
 		}
