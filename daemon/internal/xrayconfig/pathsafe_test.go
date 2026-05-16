@@ -110,6 +110,22 @@ func TestCheckPathSafetyDetailPointsAtOffendingKey(t *testing.T) {
 	}
 }
 
+func TestCheckPathSafetyRejectsDotDotEvenWhenCleanedPathIsAllowed(t *testing.T) {
+	dir := t.TempDir()
+	// Pre-stage a file under the allowed root.
+	if err := os.WriteFile(filepath.Join(dir, "geosite.dat"), []byte("fake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	withAllowedRoot(t, dir)
+	// Input with a `..` segment that would CLEAN to a path inside the allowed
+	// root. Without the raw-input check, this would slip through. With it,
+	// we reject the traversal attempt regardless of the cleaned destination.
+	cfg := []byte(`{"dns":{"dat":"` + dir + `/subdir/../geosite.dat"}}`)
+	if err := checkPathSafety(cfg); !errors.Is(err, derr.ErrPathUnsafe) {
+		t.Fatalf("err = %v, want ErrPathUnsafe — raw `..` must be rejected even if cleaned path is in the allowlist", err)
+	}
+}
+
 // withAllowedRoot swaps the package-level allowedAbsoluteRoots variable for
 // the duration of the test, then restores it on cleanup.
 func withAllowedRoot(t *testing.T, dir string) {

@@ -106,15 +106,16 @@ func validatePathValue(ptr, s string) error {
 	if !strings.HasPrefix(s, "/") {
 		return derr.NewPathUnsafe(ptr, s)
 	}
-	// Reject any `..` component pre-clean so we never even try to resolve
-	// traversal attempts.
-	cleaned := filepath.Clean(s)
-	if cleaned == ".." ||
-		strings.HasPrefix(cleaned, "../") ||
-		strings.Contains(cleaned, "/../") ||
-		strings.HasSuffix(cleaned, "/..") {
+	// Reject any `..` component in the RAW input — filepath.Clean would fold
+	// them silently, so we have to inspect the unprocessed string first.
+	// This is defense in depth on top of the EvalSymlinks + allowlist check.
+	if s == ".." ||
+		strings.HasPrefix(s, "../") ||
+		strings.Contains(s, "/../") ||
+		strings.HasSuffix(s, "/..") {
 		return derr.NewPathUnsafe(ptr, s)
 	}
+	cleaned := filepath.Clean(s)
 	// EvalSymlinks requires the file to exist. v1 contract: admin pre-stages
 	// referenced files under an allowed root.
 	resolved, err := filepath.EvalSymlinks(cleaned)
