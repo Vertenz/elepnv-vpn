@@ -232,6 +232,13 @@ type tunnelStateResult struct {
 }
 
 func (d *dispatch) handleTunnelConnect(ctx context.Context, raw json.RawMessage) (any, *derr.Error) {
+	// Rate-limit before any other work so a flooding client can't exhaust
+	// validation resources even with malformed requests.
+	if rate, ok := ctx.Value(ctxKeyConnRate{}).(*tokenBucket); ok && rate != nil {
+		if !rate.take() {
+			return nil, derr.ErrRateLimited
+		}
+	}
 	if d.machine == nil {
 		return nil, derr.ErrInternal.WithMessage("tunnel machine not wired")
 	}

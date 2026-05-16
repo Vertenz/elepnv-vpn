@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"elepn/daemon/internal/derr"
 	"elepn/daemon/internal/platform"
@@ -55,6 +56,11 @@ type connHandle struct {
 	// the writerLoop's event writes never interleave bytes on the wire.
 	// Per-connection only; different connections write concurrently.
 	wmu sync.Mutex
+
+	// rate is the per-connection token bucket for Tunnel.Connect (§8.3).
+	// Allocated once in serveConn; isolates a misbehaving renderer from
+	// throttling other connections that happen to share the same uid.
+	rate *tokenBucket
 }
 
 // write sends b (which must already be a complete NDJSON line including the
@@ -201,7 +207,10 @@ func (s *Server) acceptLoop() {
 }
 
 func (s *Server) serveConn(c *net.UnixConn) {
-	handle := &connHandle{conn: c}
+	handle := &connHandle{
+		conn: c,
+		rate: newTokenBucket(10, time.Minute),
+	}
 	if !s.registerConn(handle) {
 		// Server is closing; bail before doing any work or starting goroutines.
 		_ = c.Close()
@@ -266,6 +275,9 @@ func (s *Server) handleLine(ctx context.Context, h *connHandle, line []byte) {
 			s.log.Error("marshal decode-error response failed", "err", mErr)
 		}
 		return
+	}
+	if h.rate != nil {
+		ctx = context.WithValue(ctx, ctxKeyConnRate{}, h.rate)
 	}
 	if req.IsNotification() {
 		// JSON-RPC §4.1: servers MUST NOT respond to notifications. Plan 1

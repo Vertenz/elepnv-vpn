@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"elepn/daemon/internal/derr"
 	"elepn/daemon/internal/platform"
@@ -338,5 +339,24 @@ func TestConfigsRemoveRejectsActiveConfig(t *testing.T) {
 	_, derrVal := d.handle(context.Background(), Request{Method: "Configs.Remove", Params: rmParams})
 	if !errors.Is(derrVal, derr.ErrConfigInUse) {
 		t.Fatalf("err = %v, want ErrConfigInUse", derrVal)
+	}
+}
+
+func TestTunnelConnectHonorsRateLimit(t *testing.T) {
+	fm := &fakeMachine{}
+	d := newDispatch(platform.XrayInfo{}, nil, &recorderBroadcaster{}, fm)
+	bucket := newTokenBucket(2, time.Minute)
+	ctx := context.WithValue(context.Background(), ctxKeyConnRate{}, bucket)
+	params, _ := json.Marshal(map[string]any{"id": "01HX7N9KQ8R3JCBVB6Z3K9V4FK"})
+
+	for i := 0; i < 2; i++ {
+		_, derrVal := d.handle(ctx, Request{Method: "Tunnel.Connect", Params: params})
+		if derrVal != nil {
+			t.Fatalf("attempt %d: err = %v", i+1, derrVal)
+		}
+	}
+	_, derrVal := d.handle(ctx, Request{Method: "Tunnel.Connect", Params: params})
+	if !errors.Is(derrVal, derr.ErrRateLimited) {
+		t.Fatalf("attempt 3: err = %v, want ErrRateLimited", derrVal)
 	}
 }
