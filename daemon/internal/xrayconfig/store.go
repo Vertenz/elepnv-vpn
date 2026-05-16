@@ -165,6 +165,20 @@ func (s *Store) Add(ctx context.Context, jsonBytes []byte) (ULID, error) {
 	return id, nil
 }
 
+// Get returns the raw JSON contents of <id>.json. Returns ErrConfigUnknown
+// if the file is absent (or any other os-error wrapped).
+func (s *Store) Get(id ULID) (string, error) {
+	p, err := s.PathFor(id)
+	if err != nil {
+		return "", err // already ErrConfigUnknown
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", p, err)
+	}
+	return string(data), nil
+}
+
 // PathFor returns the absolute path of <id>.json or ErrConfigUnknown.
 func (s *Store) PathFor(id ULID) (string, error) {
 	p := s.pathFor(id)

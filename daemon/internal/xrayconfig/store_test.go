@@ -324,6 +324,30 @@ func TestAddRejectsBeyondMaxConfigs(t *testing.T) {
 	}
 }
 
+func TestStoreGetReturnsRawJSON(t *testing.T) {
+	store, _ := newStore(t, "exit 0\n")
+	id, err := store.Add(context.Background(), []byte(validCfg))
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	got, err := store.Get(id)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got != validCfg {
+		t.Fatalf("Get returned %q, want %q", got, validCfg)
+	}
+}
+
+func TestStoreGetReturnsConfigUnknownOnMissing(t *testing.T) {
+	store, _ := newStore(t, "exit 0\n")
+	bogus, _ := xrayconfig.ParseULID("01HX7N9KQ8R3JCBVB6Z3K9V4FK")
+	_, err := store.Get(bogus)
+	if !errors.Is(err, derr.ErrConfigUnknown) {
+		t.Fatalf("err = %v, want ErrConfigUnknown", err)
+	}
+}
+
 func TestAddSurfacesValidationTimeoutAsTypedError(t *testing.T) {
 	// Regression for spec §9.2 -32013: when xray validation exceeds the
 	// daemon's timeout, Store.Add must return ErrValidationTimeout (NOT
