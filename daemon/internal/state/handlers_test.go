@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -89,6 +90,21 @@ func TestHandleDisconnectIsIdempotentWhileDisconnecting(t *testing.T) {
 	m.handleDisconnect(cmdDisconnect{reply: reply})
 	if err := <-reply; err != nil {
 		t.Fatalf("err = %v, want nil", err)
+	}
+}
+
+func TestHandleConnectDoneMapsDeadlineExceededToConnectTimeout(t *testing.T) {
+	m := newTestMachine(t)
+	m.opGen = 1
+	m.handleConnectDone(cmdConnectDone{
+		gen:    1,
+		result: connectResult{err: context.DeadlineExceeded},
+	})
+	if m.state.State != StateError {
+		t.Fatalf("state = %q, want Error", m.state.State)
+	}
+	if !strings.Contains(m.state.Message, "connect_timeout") {
+		t.Fatalf("Message = %q, want it to contain connect_timeout symbol", m.state.Message)
 	}
 }
 

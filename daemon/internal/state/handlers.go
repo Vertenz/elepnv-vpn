@@ -68,6 +68,13 @@ func (m *Machine) handleConnectDone(c cmdConnectDone) {
 	switch {
 	case errors.Is(c.result.err, context.Canceled):
 		m.postState(ConnStatus{State: StateDisconnected, Since: time.Now()})
+	case errors.Is(c.result.err, context.DeadlineExceeded):
+		m.postState(ConnStatus{
+			State:   StateError,
+			Message: derr.ErrConnectTimeout.Error(),
+			Since:   time.Now(),
+		})
+		m.armAutoRevert(m.deps.cfg.AutoRevertDelay)
 	case c.result.err != nil:
 		m.postState(ConnStatus{
 			State:   StateError,
