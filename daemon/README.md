@@ -54,6 +54,20 @@ socat - UNIX-CONNECT:/tmp/xrayd-run/control.sock
 | `XRAYD_SOCK` | `/run/xrayd/control.sock` | Control socket path |
 | `XRAYD_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error` |
 
+## Conflicts with the official `xray.service`
+
+The XTLS installer (`Xray-install`) ships a `xray.service` unit that may
+start its own `xray` process. If both that service and `xrayd` are active
+they will fight for the same xray-core binary in Plan 3+. On startup `xrayd`
+logs a `WARN` when it detects an enabled `xray.service`; disable it once:
+
+```bash
+sudo systemctl disable --now xray.service
+```
+
+`xrayd` itself does not touch the installer's unit — disabling is left to
+the operator on purpose.
+
 ## Testing
 
 ```bash

@@ -124,6 +124,78 @@ func TestUnknownMethodReturnsError(t *testing.T) {
 	}
 }
 
+func TestServerEchoesIDOnInvalidRequest(t *testing.T) {
+	requireXraydGroup(t)
+	_, sockPath := startServer(t)
+	// Wrong jsonrpc version — semantic error. The server must echo the id.
+	got := dialAndReadLine(t, sockPath, `{"jsonrpc":"1.0","id":"abc","method":"X"}`)
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(got), &parsed); err != nil {
+		t.Fatalf("response not JSON: %v (%q)", err, got)
+	}
+	if parsed["id"] != "abc" {
+		t.Fatalf("id = %v, want \"abc\" (server must echo id on invalid-request errors)", parsed["id"])
+	}
+	errObj := parsed["error"].(map[string]any)
+	data := errObj["data"].(map[string]any)
+	if data["symbol"] != "invalid_request" {
+		t.Fatalf("symbol = %v, want invalid_request", data["symbol"])
+	}
+}
+
+func TestServerNullIDOnParseError(t *testing.T) {
+	requireXraydGroup(t)
+	_, sockPath := startServer(t)
+	// Unparseable JSON — id was never detectable, must be null.
+	got := dialAndReadLine(t, sockPath, `{garbage`)
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(got), &parsed); err != nil {
+		t.Fatalf("response not JSON: %v (%q)", err, got)
+	}
+	if parsed["id"] != nil {
+		t.Fatalf("id = %v, want null (parse error)", parsed["id"])
+	}
+}
+
+func TestServerSilentlyDropsNotification(t *testing.T) {
+	requireXraydGroup(t)
+	_, sockPath := startServer(t)
+
+	conn, err := net.Dial("unix", sockPath)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	// Send a notification (no id field). Per JSON-RPC §4.1 the server MUST
+	// NOT respond. We expect a read deadline to expire with no bytes.
+	if _, err := conn.Write([]byte(`{"jsonrpc":"2.0","method":"Daemon.Ping"}` + "\n")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
+	buf := make([]byte, 256)
+	n, err := conn.Read(buf)
+	if err == nil {
+		t.Fatalf("server replied to a notification: %q", string(buf[:n]))
+	}
+	// Any timeout-shaped error is fine; bytes-on-the-wire is the failure.
+
+	// Sanity: the connection is still usable for a normal request afterwards.
+	if _, err := conn.Write([]byte(`{"jsonrpc":"2.0","id":"1","method":"Daemon.Ping"}` + "\n")); err != nil {
+		t.Fatalf("write follow-up request: %v", err)
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	line, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		t.Fatalf("read follow-up: %v", err)
+	}
+	var parsed map[string]any
+	_ = json.Unmarshal([]byte(line), &parsed)
+	if parsed["id"] != "1" {
+		t.Fatalf("follow-up id = %v, want 1", parsed["id"])
+	}
+}
+
 func TestServerCloseUnlinksSocket(t *testing.T) {
 	requireXraydGroup(t)
 	srv, sockPath := startServer(t)

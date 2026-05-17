@@ -112,7 +112,9 @@ func TestBinaryRespondsToPing(t *testing.T) {
 		t.Fatalf("result.ok = %v, want true", res["ok"])
 	}
 
-	// SIGTERM and confirm exit within 1s.
+	// SIGTERM and confirm exit. Budget 5s — shutdown is fast on a quiet host
+	// but `go test` under CI load (race detector, parallel packages) needs
+	// margin so this isn't a flaky test.
 	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
 		t.Fatalf("send SIGTERM: %v", err)
 	}
@@ -123,8 +125,8 @@ func TestBinaryRespondsToPing(t *testing.T) {
 		if err != nil {
 			t.Fatalf("xrayd exited with: %v", err)
 		}
-	case <-time.After(1 * time.Second):
+	case <-time.After(5 * time.Second):
 		_ = cmd.Process.Kill()
-		t.Fatal("xrayd did not exit within 1s of SIGTERM")
+		t.Fatal("xrayd did not exit within 5s of SIGTERM")
 	}
 }

@@ -34,16 +34,65 @@ func TestDecodeRequestRejectsNonJSON(t *testing.T) {
 }
 
 func TestDecodeRequestRejectsWrongVersion(t *testing.T) {
-	_, err := ipc.DecodeRequest([]byte(`{"jsonrpc":"1.0","id":1,"method":"X"}`))
+	req, err := ipc.DecodeRequest([]byte(`{"jsonrpc":"1.0","id":1,"method":"X"}`))
 	if !errors.Is(err, derr.ErrInvalidRequest) {
 		t.Fatalf("err = %v, want ErrInvalidRequest", err)
+	}
+	// req.ID MUST be preserved so the server can echo it in the error
+	// response — JSON-RPC §5 only mandates id=null when id detection itself
+	// failed (i.e. parse error), not for semantic validation failures.
+	if string(req.ID) != `1` {
+		t.Fatalf("req.ID = %q, want %q", string(req.ID), `1`)
 	}
 }
 
 func TestDecodeRequestRejectsEmptyMethod(t *testing.T) {
-	_, err := ipc.DecodeRequest([]byte(`{"jsonrpc":"2.0","id":1,"method":""}`))
+	req, err := ipc.DecodeRequest([]byte(`{"jsonrpc":"2.0","id":"abc","method":""}`))
 	if !errors.Is(err, derr.ErrInvalidRequest) {
 		t.Fatalf("err = %v, want ErrInvalidRequest", err)
+	}
+	if string(req.ID) != `"abc"` {
+		t.Fatalf("req.ID = %q, want %q", string(req.ID), `"abc"`)
+	}
+}
+
+func TestDecodeRequestParseErrorHasNoID(t *testing.T) {
+	req, err := ipc.DecodeRequest([]byte(`{not json`))
+	if !errors.Is(err, derr.ErrParseError) {
+		t.Fatalf("err = %v, want ErrParseError", err)
+	}
+	// JSON parse failed entirely — there's no id to preserve.
+	if len(req.ID) != 0 {
+		t.Fatalf("req.ID = %q, want empty (parse error means id unknown)", string(req.ID))
+	}
+}
+
+func TestRequestIsNotification(t *testing.T) {
+	// No id field at all → notification.
+	req, err := ipc.DecodeRequest([]byte(`{"jsonrpc":"2.0","method":"Daemon.Ping"}`))
+	if err != nil {
+		t.Fatalf("DecodeRequest: %v", err)
+	}
+	if !req.IsNotification() {
+		t.Fatal("request without id should be a notification")
+	}
+
+	// "id": null → still a request (id IS present, just null).
+	req, err = ipc.DecodeRequest([]byte(`{"jsonrpc":"2.0","id":null,"method":"Daemon.Ping"}`))
+	if err != nil {
+		t.Fatalf("DecodeRequest: %v", err)
+	}
+	if req.IsNotification() {
+		t.Fatal(`request with explicit "id":null should NOT be a notification`)
+	}
+
+	// "id": "1" → request.
+	req, err = ipc.DecodeRequest([]byte(`{"jsonrpc":"2.0","id":"1","method":"Daemon.Ping"}`))
+	if err != nil {
+		t.Fatalf("DecodeRequest: %v", err)
+	}
+	if req.IsNotification() {
+		t.Fatal("request with a string id should NOT be a notification")
 	}
 }
 

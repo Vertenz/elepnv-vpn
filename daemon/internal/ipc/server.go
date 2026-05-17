@@ -38,6 +38,7 @@ type Server struct {
 	listener  *net.UnixListener
 	listening atomic.Bool
 	conns     map[*connHandle]struct{}
+	closing   bool // guarded by mu; set true by Close so late registers bail
 
 	closeOnce sync.Once
 }
@@ -85,6 +86,12 @@ func NewServer(sockPath string, xrayInfo platform.XrayInfo, log *slog.Logger) *S
 // Listen performs §8.1 socket hardening (stale-unlink + umask + chmod) and
 // starts the accept loop in a background goroutine. Returns once the listener
 // is bound; the accept goroutine continues until StopAccept + Close.
+//
+// The ctx parameter is intentionally unused — shutdown is driven by
+// StopAccept / Close (which cancel the server's baseCtx). It exists so
+// callers can pass appCtx today and so a future refactor that needs
+// cancellation during bind (e.g. awaiting RuntimeDirectory readiness) can
+// honor it without a breaking signature change.
 func (s *Server) Listen(_ context.Context) error {
 	l, err := bindControlSocket(s.sockPath, s.log)
 	if err != nil {
@@ -122,6 +129,12 @@ func (s *Server) Close() error {
 		s.StopAccept()
 		s.cancelBase()
 		s.mu.Lock()
+		// Block any late acceptLoop hand-off that won the race against
+		// l.Close(). Without this flag a connection accepted in the tiny
+		// window between StopAccept and this snapshot would slip past the
+		// loop below — bufio.Scanner doesn't honor ctx, so its goroutine
+		// would block until the peer eventually closed.
+		s.closing = true
 		conns := make([]*connHandle, 0, len(s.conns))
 		for c := range s.conns {
 			conns = append(conns, c)
@@ -160,13 +173,19 @@ func (s *Server) acceptLoop() {
 
 func (s *Server) serveConn(c *net.UnixConn) {
 	handle := &connHandle{conn: c}
-	s.registerConn(handle)
+	if !s.registerConn(handle) {
+		// Server is closing; bail before doing any work or starting goroutines.
+		_ = c.Close()
+		return
+	}
 	defer s.unregisterConn(handle)
 	defer c.Close()
 
 	if err := AuthAccept(c); err != nil {
 		if b, mErr := MarshalError(json.RawMessage(`null`), derr.AsDerr(err)); mErr == nil {
 			_ = handle.write(b)
+		} else {
+			s.log.Error("marshal auth-error response failed", "err", mErr)
 		}
 		return
 	}
@@ -193,6 +212,8 @@ func (s *Server) serveConn(c *net.UnixConn) {
 		if errors.Is(err, derr.ErrRequestTooLarge) {
 			if b, mErr := MarshalError(json.RawMessage(`null`), derr.ErrRequestTooLarge); mErr == nil {
 				_ = handle.write(b)
+			} else {
+				s.log.Error("marshal request-too-large response failed", "err", mErr)
 			}
 		} else {
 			s.log.Warn("scan error on IPC connection", "err", err)
@@ -203,20 +224,40 @@ func (s *Server) serveConn(c *net.UnixConn) {
 func (s *Server) handleLine(ctx context.Context, h *connHandle, line []byte) {
 	req, perr := DecodeRequest(line)
 	if perr != nil {
-		if b, mErr := MarshalError(json.RawMessage(`null`), derr.AsDerr(perr)); mErr == nil {
-			_ = h.write(b)
+		// JSON-RPC §5: id=null only when id detection itself failed (parse
+		// error). For semantic failures (bad jsonrpc field, empty method) we
+		// echo the parsed id so the client can correlate the error.
+		id := req.ID
+		if len(id) == 0 {
+			id = json.RawMessage(`null`)
 		}
+		if b, mErr := MarshalError(id, derr.AsDerr(perr)); mErr == nil {
+			_ = h.write(b)
+		} else {
+			s.log.Error("marshal decode-error response failed", "err", mErr)
+		}
+		return
+	}
+	if req.IsNotification() {
+		// JSON-RPC §4.1: servers MUST NOT respond to notifications. Plan 1
+		// has no client→server notifications, but a spec-compliant client
+		// could legitimately send one — execute (best-effort) and discard.
+		_, _ = s.dispatch.handle(ctx, req)
 		return
 	}
 	result, derrVal := s.dispatch.handle(ctx, req)
 	if derrVal != nil {
 		if b, mErr := MarshalError(req.ID, derrVal); mErr == nil {
 			_ = h.write(b)
+		} else {
+			s.log.Error("marshal dispatch-error response failed", "err", mErr, "method", req.Method)
 		}
 		return
 	}
 	if b, mErr := MarshalResponse(req.ID, result); mErr == nil {
 		_ = h.write(b)
+	} else {
+		s.log.Error("marshal response failed", "err", mErr, "method", req.Method)
 	}
 }
 
@@ -242,10 +283,16 @@ func (s *Server) writerLoop(h *connHandle, events <-chan Event, closed <-chan st
 	}
 }
 
-func (s *Server) registerConn(h *connHandle) {
+// registerConn adds h to the live-connection set. Returns false if Close has
+// already begun, in which case the caller must close its conn and bail.
+func (s *Server) registerConn(h *connHandle) bool {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closing {
+		return false
+	}
 	s.conns[h] = struct{}{}
-	s.mu.Unlock()
+	return true
 }
 
 func (s *Server) unregisterConn(h *connHandle) {

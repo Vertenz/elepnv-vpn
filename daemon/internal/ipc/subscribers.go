@@ -19,7 +19,7 @@ type subscribers struct {
 
 type subscriber struct {
 	id     uint64
-	events chan Event   // capacity = 16; full means the client is too slow
+	events chan Event // capacity = 16; full means the client is too slow
 	closed chan struct{}
 }
 

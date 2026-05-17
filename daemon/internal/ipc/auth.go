@@ -13,6 +13,17 @@ import (
 // group have IPC access; non-members are rejected at accept time.
 const AuthGroup = "xrayd"
 
+// CheckGroupExists verifies that the given system group is present via NSS.
+// Returns the NSS lookup error if missing. Spec §8.6 (line 1697) requires
+// the daemon to log an ERROR (but still start) when the xrayd group is
+// absent — otherwise every connection fails with `unauthorized` and the
+// operator has no obvious clue what to fix. Callers should run this once
+// at startup and surface the error via the structured logger.
+func CheckGroupExists(group string) error {
+	_, err := user.LookupGroup(group)
+	return err
+}
+
 // AuthAccept performs the SO_PEERCRED + group membership check described in
 // §8.6 of the spec. Returns nil on success or derr.ErrUnauthorized on any
 // failure path (denied uid, NSS error, missing group).

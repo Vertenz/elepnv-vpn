@@ -6,11 +6,11 @@ package derr
 // for protocol-level codes emitted by the codec on framing failures.
 var (
 	// Server-defined.
-	ErrInternal            = &Error{Code: -32000, Symbol: "internal", Message: "internal error"}
-	ErrXrayNotFound        = &Error{Code: -32001, Symbol: "xray_not_found", Message: "xray binary not found in PATH"}
-	ErrUnauthorized        = &Error{Code: -32012, Symbol: "unauthorized", Message: "peer not in xrayd group"}
-	ErrDaemonShuttingDown  = &Error{Code: -32014, Symbol: "daemon_shutting_down", Message: "daemon is shutting down"}
-	ErrRequestTooLarge     = &Error{Code: -32016, Symbol: "request_too_large", Message: "request line exceeds max_request_bytes"}
+	ErrInternal           = &Error{Code: -32000, Symbol: "internal", Message: "internal error"}
+	ErrXrayNotFound       = &Error{Code: -32001, Symbol: "xray_not_found", Message: "xray binary not found in PATH"}
+	ErrUnauthorized       = &Error{Code: -32012, Symbol: "unauthorized", Message: "peer not in xrayd group"}
+	ErrDaemonShuttingDown = &Error{Code: -32014, Symbol: "daemon_shutting_down", Message: "daemon is shutting down"}
+	ErrRequestTooLarge    = &Error{Code: -32016, Symbol: "request_too_large", Message: "request line exceeds max_request_bytes"}
 
 	// JSON-RPC reserved.
 	ErrParseError     = &Error{Code: -32700, Symbol: "parse_error", Message: "request was not valid JSON"}

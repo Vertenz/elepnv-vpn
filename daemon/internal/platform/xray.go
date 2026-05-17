@@ -24,9 +24,10 @@ type XrayInfo struct {
 type InstallerServiceState int
 
 const (
-	InstallerServiceUnknown   InstallerServiceState = iota // systemctl missing or unparseable
-	InstallerServiceEnabled                                // is-enabled exit 0
-	InstallerServiceDisabled                               // is-enabled exit non-zero, recognized
+	InstallerServiceUnknown      InstallerServiceState = iota // systemctl missing, killed, etc.
+	InstallerServiceEnabled                                   // is-enabled exit 0
+	InstallerServiceDisabled                                  // is-enabled exit 1..3 (disabled, masked, static)
+	InstallerServiceNotInstalled                              // is-enabled exit 4 (no such unit) — the common case
 )
 
 // Discover runs the daemon's xray-core discovery at startup. It never returns
@@ -45,6 +46,7 @@ func Discover(ctx context.Context, log *slog.Logger) XrayInfo {
 			"fix", "sudo systemctl disable --now xray.service")
 	case InstallerServiceUnknown:
 		log.Debug("could not determine xray.service state")
+		// NotInstalled and Disabled are the expected silent cases.
 	}
 	return XrayInfo{Path: path, Version: runXrayVersion(ctx, path), Found: true}
 }
@@ -74,13 +76,29 @@ func runXrayVersion(ctx context.Context, path string) string {
 // (systemctl missing, non-systemd host, etc.).
 func installerServiceState() InstallerServiceState {
 	cmd := exec.Command("systemctl", "is-enabled", "--quiet", "xray.service")
-	err := cmd.Run()
+	return classifyIsEnabledExit(cmd.Run())
+}
+
+// classifyIsEnabledExit maps the exit code from `systemctl is-enabled --quiet
+// xray.service` to an InstallerServiceState. Exit codes per systemctl(1):
+//
+//	0    → enabled / enabled-runtime
+//	1..3 → disabled, masked, or static (all "not actively starting")
+//	4    → unit file does not exist (common case: official installer never ran)
+//	-1   → killed by signal
+//	other → systemctl missing / non-systemd host
+func classifyIsEnabledExit(err error) InstallerServiceState {
 	if err == nil {
 		return InstallerServiceEnabled
 	}
 	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() > 0 {
-		return InstallerServiceDisabled
+	if errors.As(err, &exitErr) {
+		switch exitErr.ExitCode() {
+		case 4:
+			return InstallerServiceNotInstalled
+		case 1, 2, 3:
+			return InstallerServiceDisabled
+		}
 	}
 	return InstallerServiceUnknown
 }

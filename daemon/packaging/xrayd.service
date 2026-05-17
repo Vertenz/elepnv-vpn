@@ -1,6 +1,7 @@
 [Unit]
 Description=elepn xray-core privileged helper daemon
 After=network.target
+# TODO(packaging): replace with real upstream URL before publishing the .deb
 Documentation=https://github.com/example/elepn
 
 [Service]

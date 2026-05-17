@@ -65,7 +65,8 @@ func (e *Error) WithMessage(msg string) *Error {
 
 // JSON returns the JSON-RPC `error` object for this error.
 // Output shape: {"code": -32004, "message": "config_invalid: <msg>",
-//                "data": {"symbol": "config_invalid"}}.
+//
+//	"data": {"symbol": "config_invalid"}}.
 func (e *Error) JSON() json.RawMessage {
 	type errObj struct {
 		Code    int             `json:"code"`

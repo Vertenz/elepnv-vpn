@@ -57,6 +57,16 @@ func run() int {
 		log.Info("xray discovered", "path", xrayInfo.Path, "version", xrayInfo.Version)
 	}
 
+	// Spec §8.6:1697 — daemon must still start if the xrayd group is missing,
+	// but it MUST log an actionable ERROR so the operator can fix postinst
+	// rather than chase per-connection 'unauthorized' errors.
+	if err := ipc.CheckGroupExists(ipc.AuthGroup); err != nil {
+		log.Error("xrayd group is missing — every IPC connection will be rejected as unauthorized",
+			"err", err,
+			"group", ipc.AuthGroup,
+			"fix", "sudo groupadd --system xrayd && sudo usermod -aG xrayd $USER")
+	}
+
 	srv := ipc.NewServer(sockPath, xrayInfo, log)
 	if err := srv.Listen(appCtx); err != nil {
 		log.Error("ipc listen failed", "err", err, "sock", sockPath)
@@ -75,7 +85,9 @@ func run() int {
 	<-appCtx.Done()
 	log.Info("shutdown signal received")
 
-	if sent, _ := daemon.SdNotify(false, daemon.SdNotifyStopping); sent {
+	if sent, err := daemon.SdNotify(false, daemon.SdNotifyStopping); err != nil {
+		log.Warn("sd_notify STOPPING failed", "err", err)
+	} else if sent {
 		log.Debug("sd_notify STOPPING=1 sent")
 	}
 

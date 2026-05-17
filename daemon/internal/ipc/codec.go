@@ -27,6 +27,12 @@ type Request struct {
 	Params  json.RawMessage `json:"params"`
 }
 
+// IsNotification reports whether this request is a JSON-RPC 2.0 notification.
+// A notification has no id member at all; a request with `"id": null` is NOT
+// a notification (id is present, just null). Per JSON-RPC 2.0 §4.1 the server
+// MUST NOT reply to a notification.
+func (r Request) IsNotification() bool { return len(r.ID) == 0 }
+
 // Response is the success branch of a JSON-RPC reply.
 type Response struct {
 	JSONRPC string          `json:"jsonrpc"`
@@ -58,16 +64,21 @@ func NewScanner(r io.Reader) *bufio.Scanner {
 
 // DecodeRequest parses a single NDJSON line into a Request. Returns a typed
 // *derr.Error on framing failures so the caller can serialize it directly.
+//
+// For semantic failures (bad jsonrpc version, empty method) the returned
+// Request still carries any successfully parsed id so the caller can echo it
+// back in the error response. Only parse errors yield a zero-id Request,
+// because at that point id detection itself failed.
 func DecodeRequest(line []byte) (Request, error) {
 	var req Request
 	if err := json.Unmarshal(line, &req); err != nil {
 		return Request{}, derr.ErrParseError.With(err)
 	}
 	if req.JSONRPC != "2.0" {
-		return Request{}, derr.ErrInvalidRequest.WithMessage("jsonrpc field must be \"2.0\"")
+		return req, derr.ErrInvalidRequest.WithMessage("jsonrpc field must be \"2.0\"")
 	}
 	if req.Method == "" {
-		return Request{}, derr.ErrInvalidRequest.WithMessage("method is empty")
+		return req, derr.ErrInvalidRequest.WithMessage("method is empty")
 	}
 	return req, nil
 }
